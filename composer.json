@@ -1,0 +1,31 @@
+{
+    "name": "techork/payment-es",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "eventsauce/eventsauce": "^3.6",
+        "symfony/intl": "^7.2",
+        "moneyphp/money": "^4.6",
+        "giggsey/libphonenumber-for-php-lite": "^8.13"
+    },
+    "autoload": {
+        "psr-4": {
+            "PaymentSystem\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "PaymentSystem\\Tests\\": "tests/"
+        }
+    },
+    "require-dev": {
+        "pestphp/pest": "^3.7",
+        "pestphp/pest-plugin-faker": "^3.0"
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    }
+}
