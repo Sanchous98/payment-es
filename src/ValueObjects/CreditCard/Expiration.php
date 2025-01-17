@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace PaymentSystem\ValueObjects\CreditCard;
 
 use DateTimeImmutable;
@@ -12,7 +14,7 @@ readonly class Expiration implements JsonSerializable
 
     public function __construct(DateTimeInterface $expiration)
     {
-        $this->expiration = DateTimeImmutable::createFromInterface($expiration);
+        $this->expiration = DateTimeImmutable::createFromInterface($expiration)->modify('midnight');
     }
 
     public static function fromMonthAndYear(int $month, int $year): Expiration

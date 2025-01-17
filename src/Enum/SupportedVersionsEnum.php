@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace PaymentSystem\Enum;
 
 enum SupportedVersionsEnum: string

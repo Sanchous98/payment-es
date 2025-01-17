@@ -3,7 +3,6 @@
 namespace PaymentSystem\Gateway;
 
 use EventSauce\EventSourcing\AggregateAppliesKnownEvents;
-use EventSauce\EventSourcing\AggregateRootId;
 use EventSauce\EventSourcing\EventRecorder;
 use EventSauce\EventSourcing\EventSourcedAggregate;
 use PaymentSystem\Gateway\Events\GatewayPaymentIntentAuthorized;
@@ -59,6 +58,11 @@ class PaymentIntentAggregate implements EventSourcedAggregate
         $this->eventRecorder->recordThat(new GatewayPaymentIntentCanceled($new));
 
         return $this;
+    }
+
+    public function getPaymentIntent(): PaymentIntentInterface
+    {
+        return $this->paymentIntent;
     }
 
     protected function applyGatewayPaymentIntentAuthorized(GatewayPaymentIntentAuthorized $event): void

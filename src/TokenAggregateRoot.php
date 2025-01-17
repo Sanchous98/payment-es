@@ -1,10 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace PaymentSystem;
 
+use EventSauce\EventSourcing\AggregateRoot;
+use EventSauce\EventSourcing\AggregateRootId;
 use EventSauce\EventSourcing\AggregateRootWithAggregates;
-use EventSauce\EventSourcing\Snapshotting\AggregateRootWithSnapshotting;
-use EventSauce\EventSourcing\Snapshotting\Snapshot;
 use PaymentSystem\Commands\CreateTokenCommandInterface;
 use PaymentSystem\Contracts\TokenizedSourceInterface;
 use PaymentSystem\Enum\TokenStatusEnum;
@@ -13,15 +15,18 @@ use PaymentSystem\Events\TokenDeclined;
 use PaymentSystem\Events\TokenUsed;
 use PaymentSystem\Exceptions\CardExpiredException;
 use PaymentSystem\Exceptions\TokenExpiredException;
-use PaymentSystem\ValueObjects\CreditCard;
+use PaymentSystem\Gateway\Events\GatewayTokenAdded;
+use PaymentSystem\ValueObjects\BillingAddress;
 
-class TokenAggregateRoot implements AggregateRootWithSnapshotting, TenderInterface
+class TokenAggregateRoot implements AggregateRoot, TenderInterface
 {
-    use AggregateRootWithAggregates;
-    use SnapshotBehaviour;
+    use AggregateRootWithAggregates {
+        __construct as private __aggregateRootConstruct;
+    }
 
-    /** @todo Should be TokenizedSourceInterface */
-    private CreditCard $card;
+    private BillingAddress $billingAddress;
+
+    private TokenizedSourceInterface $source;
 
     private TokenStatusEnum $status;
 
@@ -29,19 +34,26 @@ class TokenAggregateRoot implements AggregateRootWithSnapshotting, TenderInterfa
 
     private Gateway\TokensAggregate $gateway;
 
+    private function __construct(AggregateRootId $id)
+    {
+        $this->__aggregateRootConstruct($id);
+        $this->gateway = new Gateway\TokensAggregate($this->eventRecorder());
+        $this->registerAggregate($this->gateway);
+    }
+
     public static function create(CreateTokenCommandInterface $command): static
     {
         $command->getCard()->expired() && throw new CardExpiredException();
 
         $self = new static($command->getId());
-        $self->recordThat(new TokenCreated($command->getCard()));
+        $self->recordThat(new TokenCreated($command->getCard(), $command->getBillingAddress()));
 
         return $self;
     }
 
-    public function getCard(): CreditCard
+    public function isPending(): bool
     {
-        return $this->card;
+        return $this->status === TokenStatusEnum::PENDING;
     }
 
     public function isUsed(): bool
@@ -66,7 +78,12 @@ class TokenAggregateRoot implements AggregateRootWithSnapshotting, TenderInterfa
 
     public function getSource(): TokenizedSourceInterface
     {
-        return $this->card;
+        return $this->source;
+    }
+
+    public function getBillingAddress(): BillingAddress
+    {
+        return $this->billingAddress;
     }
 
     public function getDeclineReason(): string
@@ -85,7 +102,7 @@ class TokenAggregateRoot implements AggregateRootWithSnapshotting, TenderInterfa
         return $this;
     }
 
-    public function use(callable $callback = null): static
+    public function use(?callable $callback = null): static
     {
         if (!$this->isValid()) {
             throw new TokenExpiredException();
@@ -102,10 +119,26 @@ class TokenAggregateRoot implements AggregateRootWithSnapshotting, TenderInterfa
         return array_merge(...array_values($this->gateway->getTokens()));
     }
 
+    public function __sleep()
+    {
+        unset($this->eventRecorder);
+        return array_keys((array)$this);
+    }
+
+    public function __wakeup(): void
+    {
+        foreach ($this->aggregatesInsideRoot as $aggregate) {
+            $aggregate->__construct($this->eventRecorder());
+        }
+    }
+
+    // Event Listeners
+
     protected function applyTokenCreated(TokenCreated $event): void
     {
-        $this->card = $event->source;
-        $this->status = TokenStatusEnum::CREATED;
+        $this->source = $event->source;
+        $this->billingAddress = $event->billingAddress;
+        $this->status = TokenStatusEnum::PENDING;
 
         $this->gateway = new Gateway\TokensAggregate($this->eventRecorder());
         $this->registerAggregate($this->gateway);
@@ -122,35 +155,12 @@ class TokenAggregateRoot implements AggregateRootWithSnapshotting, TenderInterfa
         $this->status = TokenStatusEnum::USED;
     }
 
-    protected function applyGatewayTokenAdded(): void
+    protected function applyGatewayTokenAdded(GatewayTokenAdded $event): void
     {
-        $this->status = TokenStatusEnum::VALID;
-    }
-
-    protected function applySnapshot(Snapshot $snapshot): void
-    {
-        $this->card = CreditCard::fromArray($snapshot->state()['source']);
-        $this->status = $snapshot->state()['status'];
-    }
-
-    protected function createSnapshotState(): array
-    {
-        return [
-            'source' => $this->card,
-            'status' => $this->status,
-        ];
-    }
-
-    public function __sleep()
-    {
-        unset($this->eventRecorder);
-        return array_keys((array)$this);
-    }
-
-    public function __wakeup(): void
-    {
-        foreach ($this->aggregatesInsideRoot as $aggregate) {
-            $aggregate->__construct($this->eventRecorder());
+        if (!isset($this->source)) {
+            $this->source = $event->token->getSource();
         }
+
+        $this->status = TokenStatusEnum::VALID;
     }
 }
