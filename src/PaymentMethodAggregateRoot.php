@@ -1,10 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace PaymentSystem;
 
+use EventSauce\EventSourcing\AggregateRoot;
+use EventSauce\EventSourcing\AggregateRootId;
 use EventSauce\EventSourcing\AggregateRootWithAggregates;
-use EventSauce\EventSourcing\Snapshotting\AggregateRootWithSnapshotting;
-use EventSauce\EventSourcing\Snapshotting\Snapshot;
 use PaymentSystem\Commands\CreatePaymentMethodCommandInterface;
 use PaymentSystem\Commands\CreateTokenPaymentMethodCommandInterface;
 use PaymentSystem\Commands\UpdatedPaymentMethodCommandInterface;
@@ -14,19 +16,20 @@ use PaymentSystem\Events\PaymentMethodCreated;
 use PaymentSystem\Events\PaymentMethodFailed;
 use PaymentSystem\Events\PaymentMethodSuspended;
 use PaymentSystem\Events\PaymentMethodUpdated;
+use PaymentSystem\Exceptions\PaymentMethodSuspendedException;
 use PaymentSystem\Exceptions\TokenExpiredException;
 use PaymentSystem\Gateway\Events\GatewayPaymentMethodAdded;
+use PaymentSystem\Gateway\Events\GatewayPaymentMethodSuspended;
+use PaymentSystem\Gateway\Events\GatewayPaymentMethodUpdated;
+use PaymentSystem\Gateway\Resources\PaymentMethodInterface;
 use PaymentSystem\ValueObjects\BillingAddress;
-use PaymentSystem\ValueObjects\Country;
-use PaymentSystem\ValueObjects\Email;
-use PaymentSystem\ValueObjects\PhoneNumber;
-use PaymentSystem\ValueObjects\State;
 use RuntimeException;
 
-class PaymentMethodAggregateRoot implements AggregateRootWithSnapshotting, TenderInterface
+class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
 {
-    use SnapshotBehaviour;
-    use AggregateRootWithAggregates;
+    use AggregateRootWithAggregates {
+        __construct as __aggregateRootConstruct;
+    }
 
     private BillingAddress $billingAddress;
 
@@ -35,6 +38,13 @@ class PaymentMethodAggregateRoot implements AggregateRootWithSnapshotting, Tende
     private PaymentMethodStatusEnum $status;
 
     private Gateway\PaymentMethodsAggregate $gateway;
+
+    private function __construct(AggregateRootId $aggregateRootId)
+    {
+        $this->__aggregateRootConstruct($aggregateRootId);
+        $this->gateway = new Gateway\PaymentMethodsAggregate($this->eventRecorder());
+        $this->registerAggregate($this->gateway);
+    }
 
     public function getBillingAddress(): BillingAddress
     {
@@ -76,7 +86,7 @@ class PaymentMethodAggregateRoot implements AggregateRootWithSnapshotting, Tende
 
     public static function createFromToken(CreateTokenPaymentMethodCommandInterface $command): static
     {
-        $command->getToken()->isUsed() && throw new TokenExpiredException();
+        !$command->getToken()->isValid() && throw new TokenExpiredException();
 
         $self = new static($command->getId());
         $self->recordThat(
@@ -93,7 +103,7 @@ class PaymentMethodAggregateRoot implements AggregateRootWithSnapshotting, Tende
     public function update(UpdatedPaymentMethodCommandInterface $command): static
     {
         if ($this->status === PaymentMethodStatusEnum::FAILED || $this->status === PaymentMethodStatusEnum::SUSPENDED) {
-            throw new RuntimeException('Payment method already suspended or failed');
+            throw new PaymentMethodSuspendedException();
         }
 
         $this->recordThat(new PaymentMethodUpdated($command->getBillingAddress()));
@@ -115,7 +125,7 @@ class PaymentMethodAggregateRoot implements AggregateRootWithSnapshotting, Tende
     public function suspend(): static
     {
         if ($this->status !== PaymentMethodStatusEnum::SUCCEEDED) {
-            throw new RuntimeException('Payment method is not succeeded to be suspended');
+            throw new PaymentMethodSuspendedException();
         }
 
         $this->recordThat(new PaymentMethodSuspended());
@@ -123,10 +133,10 @@ class PaymentMethodAggregateRoot implements AggregateRootWithSnapshotting, Tende
         return $this;
     }
 
-    public function use(callable $callback = null): static
+    public function use(?callable $callback = null): static
     {
         if (!$this->isValid()) {
-            throw new RuntimeException('Payment method is not valid');
+            throw new PaymentMethodSuspendedException();
         }
 
         isset($callback) && $callback($this);
@@ -134,24 +144,31 @@ class PaymentMethodAggregateRoot implements AggregateRootWithSnapshotting, Tende
         return $this;
     }
 
+    public function __sleep()
+    {
+        unset($this->eventRecorder);
+        return array_keys((array)$this);
+    }
+
+    public function __wakeup(): void
+    {
+        foreach ($this->aggregatesInsideRoot as $aggregate) {
+            $aggregate->__construct($this->eventRecorder());
+        }
+    }
+
+    // Event Listener
+
     protected function applyPaymentMethodCreated(PaymentMethodCreated $event): void
     {
         $this->billingAddress = $event->billingAddress;
         $this->source = $event->source;
         $this->status = PaymentMethodStatusEnum::PENDING;
-
-        $this->gateway = new Gateway\PaymentMethodsAggregate($this->eventRecorder());
-        $this->registerAggregate($this->gateway);
     }
 
     protected function applyPaymentMethodUpdated(PaymentMethodUpdated $event): void
     {
         $this->billingAddress = $event->billingAddress;
-    }
-
-    protected function applyPaymentMethodSucceeded(): void
-    {
-        $this->status = PaymentMethodStatusEnum::SUCCEEDED;
     }
 
     protected function applyPaymentMethodSuspended(): void
@@ -166,41 +183,26 @@ class PaymentMethodAggregateRoot implements AggregateRootWithSnapshotting, Tende
 
     protected function applyGatewayPaymentMethodAdded(GatewayPaymentMethodAdded $event): void
     {
+        $this->billingAddress = $event->paymentMethod->getBillingAddress();
+        $this->source = $event->paymentMethod->getSource();
         $this->status = PaymentMethodStatusEnum::SUCCEEDED;
     }
 
-    protected function applySnapshot(Snapshot $snapshot): void
+    protected function applyGatewayPaymentMethodUpdated(GatewayPaymentMethodUpdated $event): void
     {
-        $this->aggregateRootVersion = $snapshot->aggregateRootVersion();
-        $this->billingAddress = new BillingAddress(
-            firstName: $snapshot->state()['billingAddress']['first_name'],
-            lastName: $snapshot->state()['billingAddress']['last_name'],
-            city: $snapshot->state()['billingAddress']['city'],
-            country: new Country($snapshot->state()['billingAddress']['country']),
-            postalCode: $snapshot->state()['billingAddress']['postal_code'],
-            email: new Email($snapshot->state()['billingAddress']['email']),
-            phone: new PhoneNumber($snapshot->state()['billingAddress']['phone']),
-            addressLine: $snapshot->state()['billingAddress']['address_line'],
-            addressLineExtra: $snapshot->state()['billingAddress']['address_line_extra'] ?? '',
-            state: isset($snapshot->state()['billingAddress']['state']) ? new State(
-                $snapshot->state()['billingAddress']['address_line_extra']
-            ) : null,
-        );
-        $this->source = $snapshot->state()['source'];
+        $this->billingAddress = $event->paymentMethod->getBillingAddress();
     }
 
-    protected function createSnapshotState(): array
+    protected function applyGatewayPaymentMethodSuspended(GatewayPaymentMethodSuspended $event): void
     {
-        return [
-            'billingAddress' => $this->billingAddress->jsonSerialize(),
-            'source' => $this->source,
-            'status' => $this->status->value,
-        ];
-    }
+        $paymentMethods = array_map(function (PaymentMethodInterface $paymentMethod) use ($event) {
+            return $event->paymentMethod->getId()->toString() === $paymentMethod->getId()->toString() ? $event->paymentMethod : $paymentMethod;
+        }, $this->getGatewayTenders());
 
-    public function __sleep()
-    {
-        unset($this->eventRecorder);
-        return array_keys((array)$this);
+        $validMethods = array_filter($paymentMethods, fn(PaymentMethodInterface $paymentMethod) => $paymentMethod->isValid());
+
+        if (count($validMethods) === 0) {
+            $this->status = PaymentMethodStatusEnum::SUSPENDED;
+        }
     }
 }

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace PaymentSystem\ValueObjects;
 
 use DateTimeImmutable;
@@ -23,11 +25,11 @@ readonly class CreditCard implements TokenizedSourceInterface
 
     public static function fromArray(array $data): self
     {
-        $expiration = DateTimeImmutable::createFromFormat('n y', $data['expiration']);
+        $expiration = DateTimeImmutable::createFromFormat('my', $data['expiration']);
 
         return new self(
             new Number($data['first6'], $data['last4'], $data['brand']),
-            new Expiration($expiration->format('n'), $expiration->format('y')),
+            new Expiration($expiration),
             new Holder($data['holder']),
             new Cvc(),
         );

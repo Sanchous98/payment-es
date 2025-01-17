@@ -1,12 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace PaymentSystem;
 
+use EventSauce\EventSourcing\AggregateRoot;
 use EventSauce\EventSourcing\AggregateRootBehaviour;
 use EventSauce\EventSourcing\AggregateRootId;
-use EventSauce\EventSourcing\Snapshotting\AggregateRootWithSnapshotting;
-use EventSauce\EventSourcing\Snapshotting\Snapshot;
-use Money\Currency;
 use Money\Money;
 use PaymentSystem\Commands\CreateDisputeCommandInterface;
 use PaymentSystem\Enum\DisputeStatusEnum;
@@ -16,11 +16,9 @@ use PaymentSystem\Events\DisputeLost;
 use PaymentSystem\Events\DisputeWon;
 use PaymentSystem\Exceptions\DisputeException;
 use PaymentSystem\Exceptions\InvalidAmountException;
-use PaymentSystem\ValueObjects\GenericId;
 
-class DisputeAggregateRoot implements AggregateRootWithSnapshotting
+class DisputeAggregateRoot implements AggregateRoot
 {
-    use SnapshotBehaviour;
     use AggregateRootBehaviour;
 
     private AggregateRootId $paymentIntentId;
@@ -101,23 +99,6 @@ class DisputeAggregateRoot implements AggregateRootWithSnapshotting
         return $this;
     }
 
-    protected function apply(DisputeCreated|DisputeLost|DisputeWon $event): void
-    {
-        switch ($event::class) {
-            case DisputeCreated::class:
-                $this->applyDisputeCreated($event);
-                break;
-            case DisputeLost::class:
-                $this->applyDisputeLost();
-                break;
-            case DisputeWon::class:
-                $this->applyDisputeWon();
-                break;
-        }
-
-        ++$this->aggregateRootVersion;
-    }
-
     protected function applyDisputeCreated(DisputeCreated $event): void
     {
         $this->status = DisputeStatusEnum::CREATED;
@@ -135,34 +116,6 @@ class DisputeAggregateRoot implements AggregateRootWithSnapshotting
     protected function applyDisputeWon(): void
     {
         $this->status = DisputeStatusEnum::WON;
-    }
-
-    protected function applySnapshot(Snapshot $snapshot): void
-    {
-        $this->aggregateRootVersion = $snapshot->aggregateRootVersion();
-
-        $this->paymentIntentId = new GenericId($snapshot->state()['paymentIntentId']);
-        $this->status = DisputeStatusEnum::from($snapshot->state()['status']);
-        $this->money = new Money(
-            $snapshot->state()['money']['amount'],
-            new Currency($snapshot->state()['money']['currency']),
-        );
-        $this->fee = new Money(
-            $snapshot->state()['fee']['amount'],
-            new Currency($snapshot->state()['fee']['currency']),
-        );
-        $this->reason = $snapshot->state()['reason'];
-    }
-
-    protected function createSnapshotState(): array
-    {
-        return [
-            'paymentIntentId' => $this->paymentIntentId->toString(),
-            'status' => $this->status->value,
-            'money' => $this->money->jsonSerialize(),
-            'fee' => $this->fee->jsonSerialize(),
-            'reason' => $this->reason,
-        ];
     }
 
     public function __sleep()

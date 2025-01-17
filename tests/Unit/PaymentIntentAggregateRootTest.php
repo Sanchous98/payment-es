@@ -1,258 +1,394 @@
 <?php
 
+use EventSauce\EventSourcing\AggregateRootId;
 use Money\Currency;
 use Money\Money;
 use PaymentSystem\Commands\AuthorizePaymentCommandInterface;
 use PaymentSystem\Commands\CapturePaymentCommandInterface;
 use PaymentSystem\Contracts\SourceInterface;
 use PaymentSystem\Enum\PaymentIntentStatusEnum;
+use PaymentSystem\Events\PaymentIntentAuthorized;
+use PaymentSystem\Events\PaymentIntentCanceled;
+use PaymentSystem\Events\PaymentIntentCaptured;
+use PaymentSystem\Events\PaymentIntentDeclined;
 use PaymentSystem\Events\PaymentMethodCreated;
 use PaymentSystem\Events\PaymentMethodFailed;
-use PaymentSystem\Events\PaymentMethodSucceeded;
-use PaymentSystem\Events\PaymentMethodSuspended;
 use PaymentSystem\Events\TokenCreated;
+use PaymentSystem\Events\TokenUsed;
 use PaymentSystem\Exceptions\CancelUnavailableException;
+use PaymentSystem\Exceptions\CaptureUnavailableException;
 use PaymentSystem\Exceptions\DeclineUnavailableException;
 use PaymentSystem\Exceptions\InvalidAmountException;
 use PaymentSystem\Exceptions\PaymentMethodSuspendedException;
+use PaymentSystem\Exceptions\TokenExpiredException;
+use PaymentSystem\Gateway\Events\GatewayPaymentIntentAuthorized;
+use PaymentSystem\Gateway\Events\GatewayPaymentIntentCanceled;
+use PaymentSystem\Gateway\Events\GatewayPaymentIntentCaptured;
+use PaymentSystem\Gateway\Resources\PaymentIntentInterface;
 use PaymentSystem\PaymentIntentAggregateRoot;
 use PaymentSystem\PaymentMethodAggregateRoot;
-use PaymentSystem\Tests\IntId;
+use PaymentSystem\Tests\PaymentIntents;
 use PaymentSystem\TokenAggregateRoot;
 use PaymentSystem\ValueObjects\BillingAddress;
 use PaymentSystem\ValueObjects\CreditCard;
+use PaymentSystem\ValueObjects\GenericId;
+use PaymentSystem\ValueObjects\ThreeDSResult;
 
-describe('payment authorize', function () {
-    test(
-        'payment is authorized successfully by payment method',
-        function (BillingAddress $billingAddress, SourceInterface $source) {
-            $paymentMethod = PaymentMethodAggregateRoot::reconstituteFromEvents(
-                new IntId(1),
-                generator([
-                    new PaymentMethodCreated($billingAddress, $source),
-                    new PaymentMethodSucceeded()
-                ])
-            );
+use function EventSauce\EventSourcing\PestTooling\given;
+use function EventSauce\EventSourcing\PestTooling\when;
 
-            $command = $this->createStub(AuthorizePaymentCommandInterface::class);
-            $command->method('getId')->willReturn(new IntId(3));
-            $command->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
-            $command->method('getTender')->willReturn($paymentMethod);
-            $command->method('getMerchantDescriptor')->willReturn('');
+uses(PaymentIntents::class);
 
-            $paymentIntent = PaymentIntentAggregateRoot::authorize($command);
-
-            expect($paymentIntent)
-                ->getMoney()->equals(new Money(100, new Currency('USD')))->toBeTrue()
-                ->is(PaymentIntentStatusEnum::REQUIRES_CAPTURE)->toBeTrue()
-                ->getMerchantDescriptor()->toBe('');
-        }
-    )->with('billing address', 'source');
-
-    test('payment is authorized successfully by token', function () {
-        $token = TokenAggregateRoot::reconstituteFromEvents(
-            new IntId(1),
-            generator([
-                new TokenCreated(
-                    new CreditCard(
-                        new CreditCard\Number('424242', '4242', 'visa'),
-                        new CreditCard\Expiration(12, 34),
-                        new CreditCard\Holder('Andrea Palladio'),
-                        new CreditCard\Cvc(),
-                    )
-                )
-            ])
-        );
-
+describe('domain-first flow', function () {
+    it('is authorized successfully without payment method', function () {
+        $threeDS = $this->createStub(ThreeDSResult::class);
         $command = $this->createStub(AuthorizePaymentCommandInterface::class);
-        $command->method('getId')->willReturn(new IntId(3));
         $command->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
-        $command->method('getTender')->willReturn($token);
-        $command->method('getMerchantDescriptor')->willReturn('');
+        $command->method('getDescription')->willReturn('test description');
+        $command->method('getMerchantDescriptor')->willReturn('test merchant descriptor');
+        $command->method('getThreeDSResult')->willReturn($threeDS);
 
-        $paymentIntent = PaymentIntentAggregateRoot::authorize($command);
+        when(fn() => PaymentIntentAggregateRoot::authorize($command))
+            ->then(new PaymentIntentAuthorized(
+                $command->getMoney(),
+                $command->getTender()?->aggregateRootId(),
+                $command->getMerchantDescriptor(),
+                $command->getDescription(),
+                $command->getThreeDSResult(),
+            ));
 
-        expect($paymentIntent)
+        expect($this->retrieveAggregateRoot($command->getId()))
+            ->toBeInstanceOf(PaymentIntentAggregateRoot::class)
             ->getMoney()->equals(new Money(100, new Currency('USD')))->toBeTrue()
+            ->getDescription()->toBe('test description')
+            ->getMerchantDescriptor()->toBe('test merchant descriptor')
+            ->getThreeDSResult()->toBe($threeDS)
+            ->is(PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD)->toBeTrue()
+            ->getStatus()->toBe(PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD);
+    })->wip('can we really do this even with stripe?');
+    it('is authorized successfully on payment method', function () {
+        $threeDS = $this->createStub(ThreeDSResult::class);
+        $command = $this->createStub(AuthorizePaymentCommandInterface::class);
+        $command->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
+        $command->method('getDescription')->willReturn('test description');
+        $command->method('getMerchantDescriptor')->willReturn('test merchant descriptor');
+        $command->method('getThreeDSResult')->willReturn($threeDS);
+
+        $paymentMethod = $this->createStub(PaymentMethodAggregateRoot::class);
+        $paymentMethod->method('isValid')->willReturn(true);
+        $command->method('getTender')->willReturn($paymentMethod);
+
+        when(fn() => PaymentIntentAggregateRoot::authorize($command))
+            ->then(new PaymentIntentAuthorized(
+                $command->getMoney(),
+                $command->getTender()?->aggregateRootId(),
+                $command->getMerchantDescriptor(),
+                $command->getDescription(),
+                $command->getThreeDSResult(),
+            ));
+
+        expect($this->retrieveAggregateRoot($command->getId()))
+            ->toBeInstanceOf(PaymentIntentAggregateRoot::class)
+            ->getMoney()->equals(new Money(100, new Currency('USD')))->toBeTrue()
+            ->getDescription()->toBe('test description')
+            ->getMerchantDescriptor()->toBe('test merchant descriptor')
+            ->getThreeDSResult()->toBe($threeDS)
             ->is(PaymentIntentStatusEnum::REQUIRES_CAPTURE)->toBeTrue()
-            ->getMerchantDescriptor()->toBe('');
+            ->getStatus()->toBe(PaymentIntentStatusEnum::REQUIRES_CAPTURE);
     });
-
-    test('authorize negative amount', function (BillingAddress $billingAddress, SourceInterface $source) {
-        $paymentMethod = PaymentMethodAggregateRoot::reconstituteFromEvents(
-            new IntId(1),
-            generator([
-                new PaymentMethodCreated($billingAddress, $source),
-                new PaymentMethodSucceeded()
-            ])
-        );
-
-        $paymentIntent = PaymentIntentAggregateRoot::reconstituteFromEvents(new IntId(1), generator());
-
+    it('cannot authorize negative amount', function () {
         $command = $this->createStub(AuthorizePaymentCommandInterface::class);
         $command->method('getMoney')->willReturn(new Money(-100, new Currency('USD')));
-        $command->method('getTender')->willReturn($paymentMethod);
-        $command->method('getMerchantDescriptor')->willReturn('');
 
-        $paymentIntent->authorize($command);
-    })->with('billing address', 'source')->throws(InvalidAmountException::class);
-
-    test('authorize 0 amount', function (BillingAddress $billingAddress, SourceInterface $source) {
-        $paymentMethod = PaymentMethodAggregateRoot::reconstituteFromEvents(
-            new IntId(1),
-            generator([
-                new PaymentMethodCreated($billingAddress, $source),
-                new PaymentMethodSucceeded()
-            ])
-        );
-
-        $paymentIntent = PaymentIntentAggregateRoot::reconstituteFromEvents(new IntId(1), generator());
-
+        when(fn() => PaymentIntentAggregateRoot::authorize($command))
+            ->expectToFail(InvalidAmountException::notNegative());
+    });
+    it('cannot authorize 0 amount', function () {
         $command = $this->createStub(AuthorizePaymentCommandInterface::class);
         $command->method('getMoney')->willReturn(new Money(0, new Currency('USD')));
+
+        when(fn() => PaymentIntentAggregateRoot::authorize($command))
+            ->expectToFail(InvalidAmountException::notZero());
+    });
+    it('cannot authorize not valid payment method', function () {
+        $command = $this->createStub(AuthorizePaymentCommandInterface::class);
+        $command->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
+
+        $paymentMethod = PaymentMethodAggregateRoot::reconstituteFromEvents(new GenericId(2), (function () {
+            yield new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class));
+            yield new PaymentMethodFailed();
+        })());
+
         $command->method('getTender')->willReturn($paymentMethod);
-        $command->method('getMerchantDescriptor')->willReturn('');
 
-        $paymentIntent->authorize($command);
-    })->with('billing address', 'source')->throws(InvalidAmountException::class);
+        when(fn() => PaymentIntentAggregateRoot::authorize($command))
+            ->expectToFail(new PaymentMethodSuspendedException());
+    });
+    it('cannot authorize not valid token', function () {
+        $command = $this->createStub(AuthorizePaymentCommandInterface::class);
+        $command->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
+        $token = TokenAggregateRoot::reconstituteFromEvents(new GenericId(2), (function () {
+            yield new TokenCreated($this->createStub(CreditCard::class));
+            yield new TokenUsed();
+        })());
+        $command->method('getTender')->willReturn($token);
 
-    test(
-        'cannot authorize on suspended payment method',
-        function (BillingAddress $billingAddress, SourceInterface $source) {
-            $paymentMethod = PaymentMethodAggregateRoot::reconstituteFromEvents(
-                new IntId(1),
-                generator([
-                    new PaymentMethodCreated($billingAddress, $source),
-                    new PaymentMethodSucceeded(),
-                    new PaymentMethodSuspended(),
-                ])
-            );
+        when(fn() => PaymentIntentAggregateRoot::authorize($command))
+            ->expectToFail(new TokenExpiredException());
+    });
 
-            $paymentIntent = PaymentIntentAggregateRoot::reconstituteFromEvents(new IntId(1), generator());
+    it('payment captured successfully', function () {
+        given(new PaymentIntentAuthorized(
+            new Money(100, new Currency('USD')),
+            $this->createStub(AggregateRootId::class),
+            'test merchant descriptor',
+            'test description',
+        ))->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($this->createStub(CapturePaymentCommandInterface::class)))
+            ->then(new PaymentIntentCaptured());
 
-            $command = $this->createStub(AuthorizePaymentCommandInterface::class);
-            $command->method('getMoney')->willReturn(new Money(0, new Currency('USD')));
-            $command->method('getTender')->willReturn($paymentMethod);
-            $command->method('getMerchantDescriptor')->willReturn('');
-
-            $paymentIntent->authorize($command);
-        }
-    )->with('billing address', 'source')->throws(PaymentMethodSuspendedException::class);
-
-    test(
-        'cannot authorize on failed payment method',
-        function (BillingAddress $billingAddress, SourceInterface $source) {
-            $paymentMethod = PaymentMethodAggregateRoot::reconstituteFromEvents(
-                new IntId(1),
-                generator([
-                    new PaymentMethodCreated($billingAddress, $source),
-                    new PaymentMethodFailed(),
-                ])
-            );
-
-            $paymentIntent = PaymentIntentAggregateRoot::reconstituteFromEvents(new IntId(1), generator());
-
-            $command = $this->createStub(AuthorizePaymentCommandInterface::class);
-            $command->method('getMoney')->willReturn(new Money(0, new Currency('USD')));
-            $command->method('getTender')->willReturn($paymentMethod);
-            $command->method('getMerchantDescriptor')->willReturn('');
-
-            $paymentIntent->authorize($command);
-        }
-    )->with('billing address', 'source')->throws(PaymentMethodSuspendedException::class);
-
-    test(
-        'cannot authorize on not approved payment method',
-        function (BillingAddress $billingAddress, SourceInterface $source) {
-            $paymentMethod = PaymentMethodAggregateRoot::reconstituteFromEvents(
-                new IntId(1),
-                generator([
-                    new PaymentMethodCreated($billingAddress, $source),
-                ])
-            );
-
-            $paymentIntent = PaymentIntentAggregateRoot::reconstituteFromEvents(new IntId(1), generator());
-
-            $command = $this->createStub(AuthorizePaymentCommandInterface::class);
-            $command->method('getMoney')->willReturn(new Money(0, new Currency('USD')));
-            $command->method('getTender')->willReturn($paymentMethod);
-            $command->method('getMerchantDescriptor')->willReturn('');
-
-            $paymentIntent->authorize($command);
-        }
-    )->with('billing address', 'source')->throws(PaymentMethodSuspendedException::class);
-});
-
-describe('payment capture', function () {
-    test('payment captured successfully', function (PaymentIntentAggregateRoot $paymentIntent) {
-        $command = $this->createStub(CapturePaymentCommandInterface::class);
-        $command->method('getTender')->willReturn(null);
-        $command->method('getAmount')->willReturn(null);
-
-        $paymentIntent->capture($command);
-
-        expect($paymentIntent)
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(PaymentIntentAggregateRoot::class)
             ->getMoney()->equals(new Money(100, new Currency('USD')))->toBeTrue()
+            ->getDescription()->toBe('test description')
+            ->getMerchantDescriptor()->toBe('test merchant descriptor')
             ->is(PaymentIntentStatusEnum::SUCCEEDED)->toBeTrue()
-            ->getMerchantDescriptor()->toBe('');
-    })->with('authorized payment');
-
-    test('payment captured partially', function (PaymentIntentAggregateRoot $paymentIntent) {
+            ->getStatus()->toBe(PaymentIntentStatusEnum::SUCCEEDED)
+            ->getAuthAndCaptureDifference()->equals(new Money(0, new Currency('USD')));
+    });
+    it('payment captured partially', function () {
         $command = $this->createStub(CapturePaymentCommandInterface::class);
-        $command->method('getTender')->willReturn(null);
         $command->method('getAmount')->willReturn('50');
 
-        $paymentIntent->capture($command);
+        given(new PaymentIntentAuthorized(
+            new Money(100, new Currency('USD')),
+            $this->createStub(AggregateRootId::class),
+            'test merchant descriptor',
+            'test description',
+        ))->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($command))
+            ->then(new PaymentIntentCaptured($command->getAmount()));
 
-        expect($paymentIntent)
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(PaymentIntentAggregateRoot::class)
             ->getMoney()->equals(new Money(50, new Currency('USD')))->toBeTrue()
+            ->getDescription()->toBe('test description')
+            ->getMerchantDescriptor()->toBe('test merchant descriptor')
             ->is(PaymentIntentStatusEnum::SUCCEEDED)->toBeTrue()
-            ->getMerchantDescriptor()->toBe('');
-    })->with('authorized payment');
-
-    test('capture negative amount', function (PaymentIntentAggregateRoot $paymentIntent) {
+            ->getStatus()->toBe(PaymentIntentStatusEnum::SUCCEEDED)
+            ->getAuthAndCaptureDifference()->equals(new Money(50, new Currency('USD')));
+    });
+    it('cannot capture negative amount', function () {
         $command = $this->createStub(CapturePaymentCommandInterface::class);
-        $command->method('getTender')->willReturn(null);
-        $command->method('getAmount')->willReturn('-100');
+        $command->method('getAmount')->willReturn('-50');
 
-        $paymentIntent->capture($command);
-    })->with('authorized payment')->throws(InvalidAmountException::class);
-
-    test('capture 0 amount', function (PaymentIntentAggregateRoot $paymentIntent) {
+        given(new PaymentIntentAuthorized(
+            new Money(100, new Currency('USD')),
+            $this->createStub(AggregateRootId::class),
+        ))
+            ->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($command))
+            ->expectToFail(InvalidAmountException::notNegative());
+    });
+    it('cannot capture 0 amount', function () {
         $command = $this->createStub(CapturePaymentCommandInterface::class);
-        $command->method('getTender')->willReturn(null);
         $command->method('getAmount')->willReturn('0');
 
-        $paymentIntent->capture($command);
-    })->with('authorized payment')->throws(InvalidAmountException::class);
-});
+        given(new PaymentIntentAuthorized(
+            new Money(100, new Currency('USD')),
+            $this->createStub(AggregateRootId::class),
+        ))
+            ->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($command))
+            ->expectToFail(InvalidAmountException::notZero());
+    });
+    it('cannot capture more than authorized', function () {
+        $command = $this->createStub(CapturePaymentCommandInterface::class);
+        $command->method('getAmount')->willReturn('200');
 
-describe('payment cancel', function () {
-    test('payment canceled successfully', function (PaymentIntentAggregateRoot $paymentIntent) {
-        $paymentIntent->cancel();
+        given(new PaymentIntentAuthorized(
+            new Money(100, new Currency('USD')),
+            $this->createStub(AggregateRootId::class),
+        ))
+            ->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($command))
+            ->expectToFail(InvalidAmountException::notGreaterThanAuthorized('100'));
+    });
+    it('cannot capture without tender if it was not provided while authorization', function () {
+        $command = $this->createStub(CapturePaymentCommandInterface::class);
+        $command->method('getAmount')->willReturn('100');
+        $command->method('getTender')->willReturn(null);
 
-        expect($paymentIntent)->is(PaymentIntentStatusEnum::CANCELED)->toBeTrue();
-    })->with('authorized payment');
+        given(new PaymentIntentAuthorized(new Money(100, new Currency('USD'))))
+            ->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($command))
+            ->expectToFail(CaptureUnavailableException::paymentMethodIsRequired());
+    });
+    it('cannot capture captured payment', function () {
+        given(
+            new PaymentIntentAuthorized(new Money(100, new Currency('USD'))),
+            new PaymentIntentCaptured(tenderId: $this->createStub(AggregateRootId::class)),
+        )
+            ->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($this->createStub(CapturePaymentCommandInterface::class)))
+            ->expectToFail(CaptureUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::SUCCEEDED));
+    });
+    it('cannot capture declined payment', function () {
+        given(
+            new PaymentIntentAuthorized(new Money(100, new Currency('USD'))),
+            new PaymentIntentDeclined('test reason'),
+        )
+            ->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($this->createStub(CapturePaymentCommandInterface::class)))
+            ->expectToFail(CaptureUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::DECLINED));
+    });
+    it('cannot capture canceled payment', function () {
+        given(
+            new PaymentIntentAuthorized(new Money(100, new Currency('USD'))),
+            new PaymentIntentCanceled(),
+        )
+            ->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($this->createStub(CapturePaymentCommandInterface::class)))
+            ->expectToFail(CaptureUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::CANCELED));
+    });
 
-    test('cannot cancel captured payment', function (PaymentIntentAggregateRoot $paymentIntent) {
-        $paymentIntent->cancel();
-    })->with('captured payment')->throws(CancelUnavailableException::class);
+    it('payment canceled successfully', function () {
+        given(new PaymentIntentAuthorized(
+            new Money(100, new Currency('USD')),
+            $this->createStub(AggregateRootId::class),
+        ))->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->cancel())
+            ->then(new PaymentIntentCanceled());
 
-    test('cannot cancel canceled payment', function (PaymentIntentAggregateRoot $paymentIntent) {
-        $paymentIntent->cancel();
-    })->with('canceled payment')->throws(CancelUnavailableException::class);
-});
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(PaymentIntentAggregateRoot::class)
+            ->is(PaymentIntentStatusEnum::CANCELED)->toBeTrue();
+    });
+    it('cannot cancel captured payment', function () {
+        given(
+            new PaymentIntentAuthorized(
+                new Money(100, new Currency('USD')),
+                $this->createStub(AggregateRootId::class),
+            ),
+            new PaymentIntentCaptured(),
+        )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->cancel())
+            ->expectToFail(CancelUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::SUCCEEDED));
+    });
+    it('cannot cancel canceled payment', function () {
+        given(
+            new PaymentIntentAuthorized(
+                new Money(100, new Currency('USD')),
+                $this->createStub(AggregateRootId::class),
+            ),
+            new PaymentIntentCanceled(),
+        )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->cancel())
+            ->expectToFail(CancelUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::CANCELED));
+    });
+    it('cannot cancel declined payment', function () {
+        given(
+            new PaymentIntentAuthorized(
+                new Money(100, new Currency('USD')),
+                $this->createStub(AggregateRootId::class),
+            ),
+            new PaymentIntentCaptured(),
+            new PaymentIntentDeclined('test reason'),
+        )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->cancel())
+            ->expectToFail(CancelUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::DECLINED));
+    });
 
-describe('payment declined', function () {
-    test('payment declined successfully', function (PaymentIntentAggregateRoot $paymentIntent) {
-        $paymentIntent->decline('test reason');
+    it('payment declined successfully', function () {
+        given(
+            new PaymentIntentAuthorized(
+                new Money(100, new Currency('USD')),
+                $this->createStub(AggregateRootId::class),
+            ),
+        )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->decline('test reason'))
+            ->then(new PaymentIntentDeclined('test reason'));
 
-        expect($paymentIntent)
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(PaymentIntentAggregateRoot::class)
             ->is(PaymentIntentStatusEnum::DECLINED)->toBeTrue()
             ->getDeclineReason()->toBe('test reason');
-    })->with('authorized payment');
+    });
+    it('cannot decline canceled payment', function () {
+        given(
+            new PaymentIntentAuthorized(
+                new Money(100, new Currency('USD')),
+                $this->createStub(AggregateRootId::class),
+            ),
+            new PaymentIntentCanceled(),
+        )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->decline('test reason'))
+            ->expectToFail(DeclineUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::CANCELED));
+    });
+    it('cannot decline declined payment', function () {
+        given(
+            new PaymentIntentAuthorized(
+                new Money(100, new Currency('USD')),
+                $this->createStub(AggregateRootId::class),
+            ),
+            new PaymentIntentCaptured(),
+            new PaymentIntentDeclined('test reason'),
+        )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->decline('test reason 2'))
+            ->expectToFail(DeclineUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::DECLINED));
+    });
+    it('cannot decline captured payment', function () {
+        given(
+            new PaymentIntentAuthorized(
+                new Money(100, new Currency('USD')),
+                $this->createStub(AggregateRootId::class),
+            ),
+            new PaymentIntentCaptured()
+        )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->decline('test reason'))
+            ->expectToFail(DeclineUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::SUCCEEDED));
+    });
+});
 
-    test('cannot cancel captured payment', function (PaymentIntentAggregateRoot $paymentIntent) {
-        $paymentIntent->decline('');
-    })->with('captured payment')->throws(DeclineUnavailableException::class);
+describe('gateway-only flow', function () {
+    it('can authorize', function () {
+        $gateway = $this->createStub(PaymentIntentInterface::class);
+        $gateway->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
+
+        when(function (PaymentIntentAggregateRoot $paymentIntent) use($gateway) {
+            $paymentIntent->getGatewayPaymentIntent()->authorize(fn() => $gateway);
+            return $paymentIntent;
+        })
+            ->then(new GatewayPaymentIntentAuthorized($gateway));
+    });
+    it('can capture', function () {
+        $gateway = $this->createStub(PaymentIntentInterface::class);
+        $gateway->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
+
+        $captured = clone $gateway;
+        $captured->method('getPaymentMethodId')->willReturn($this->createStub(AggregateRootId::class));
+
+        given(
+            new GatewayPaymentIntentAuthorized($gateway),
+        )
+            ->when(function (PaymentIntentAggregateRoot $paymentIntent) use($captured) {
+                $paymentIntent->getGatewayPaymentIntent()->capture(fn() => $captured);
+                return $paymentIntent;
+            })
+            ->then(new GatewayPaymentIntentCaptured($captured));
+    });
+    it('can cancel', function () {
+        $gateway = $this->createStub(PaymentIntentInterface::class);
+        $gateway->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
+
+        $canceled = clone $gateway;
+
+        given(
+            new GatewayPaymentIntentAuthorized($gateway),
+        )
+            ->when(function (PaymentIntentAggregateRoot $paymentIntent) use($canceled) {
+                $paymentIntent->getGatewayPaymentIntent()->cancel(fn() => $canceled);
+                return $paymentIntent;
+            })
+            ->then(new GatewayPaymentIntentCanceled($canceled));
+    });
+});
+
+test('payment intent is serialized and unserialized successfully', function () {
+    $paymentIntent = $this->retrieveAggregateRoot($this->newAggregateRootId());
+    $serialized = serialize($paymentIntent);
+    /** @var PaymentIntentAggregateRoot $paymentIntent */
+    $paymentIntent = unserialize($serialized);
+
+    $gateway = $this->createStub(PaymentIntentInterface::class);
+    $gateway->method('getId')->willReturn($this->createStub(AggregateRootId::class));
+    $gateway->method('getGatewayId')->willReturn($this->createStub(AggregateRootId::class));
+    $gateway->method('isValid')->willReturn(true);
+    $gateway->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
+
+    $paymentIntent->getGatewayPaymentIntent()->authorize(fn() => $gateway);
+    expect($paymentIntent->releaseEvents())->toContainEqual(new GatewayPaymentIntentAuthorized($gateway));
 });

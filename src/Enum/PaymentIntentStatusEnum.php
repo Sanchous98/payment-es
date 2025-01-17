@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace PaymentSystem\Enum;
 
 enum PaymentIntentStatusEnum: string
@@ -10,13 +12,13 @@ enum PaymentIntentStatusEnum: string
 
     case REQUIRES_CAPTURE = 'requires_capture';
 
+    case REQUIRES_ACTION = 'action_required';
+
     case SUCCEEDED = 'succeeded';
 
     case DECLINED = 'declined';
 
     case CANCELED = 'canceled';
-
-    case ACTION_REQUIRED = 'action_required';
 
     case ERROR = 'error';
 }
