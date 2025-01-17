@@ -1,194 +1,356 @@
 <?php
 
+use EventSauce\EventSourcing\AggregateRootId;
 use PaymentSystem\Commands\CreatePaymentMethodCommandInterface;
 use PaymentSystem\Commands\CreateTokenPaymentMethodCommandInterface;
+use PaymentSystem\Commands\UpdatedPaymentMethodCommandInterface;
+use PaymentSystem\Contracts\SourceInterface;
 use PaymentSystem\Enum\PaymentMethodStatusEnum;
 use PaymentSystem\Events\PaymentMethodCreated;
-use PaymentSystem\Events\PaymentMethodSucceeded;
-use PaymentSystem\Events\TokenCreated;
-use PaymentSystem\Events\TokenUsed;
+use PaymentSystem\Events\PaymentMethodFailed;
+use PaymentSystem\Events\PaymentMethodSuspended;
+use PaymentSystem\Events\PaymentMethodUpdated;
+use PaymentSystem\Exceptions\PaymentMethodSuspendedException;
 use PaymentSystem\Exceptions\TokenExpiredException;
+use PaymentSystem\Gateway\Events\GatewayPaymentMethodAdded;
+use PaymentSystem\Gateway\Events\GatewayPaymentMethodSuspended;
+use PaymentSystem\Gateway\Events\GatewayPaymentMethodUpdated;
+use PaymentSystem\Gateway\Resources\PaymentMethodInterface;
 use PaymentSystem\PaymentMethodAggregateRoot;
-use PaymentSystem\Tests\IntId;
+use PaymentSystem\Tests\PaymentMethods;
 use PaymentSystem\TokenAggregateRoot;
 use PaymentSystem\ValueObjects\BillingAddress;
-use PaymentSystem\ValueObjects\Country;
 use PaymentSystem\ValueObjects\CreditCard;
-use PaymentSystem\ValueObjects\Email;
-use PaymentSystem\ValueObjects\PhoneNumber;
 
-use function Pest\Faker\fake;
+use function EventSauce\EventSourcing\PestTooling\given;
+use function EventSauce\EventSourcing\PestTooling\when;
 
-test('payment method created successfully from token', function () {
-    $card = new CreditCard(
-        new CreditCard\Number('424242', '4242', 'visa'),
-        new CreditCard\Expiration(12, 34),
-        new CreditCard\Holder('Andrea Palladio'),
-        new CreditCard\Cvc(),
-    );
+uses(PaymentMethods::class);
 
-    $token = TokenAggregateRoot::reconstituteFromEvents(new IntId(1), generator([
-        new TokenCreated($card)
-    ]));
+describe('domain-first flow', function () {
+    it('payment method created successfully from token', function () {
+        $token = $this->createStub(TokenAggregateRoot::class);
+        $token->method('getSource')->willReturn(new CreditCard(
+            new CreditCard\Number('424242', '4242', 'visa'),
+            CreditCard\Expiration::fromMonthAndYear(12, 34),
+            new CreditCard\Holder('Andrea Palladio'),
+            new CreditCard\Cvc(),
+        ));
+        $token->method('getSource')->willReturn($token->getSource());
+        $token->method('isValid')->willReturn(true);
+        $billingAddress = $this->createStub(BillingAddress::class);
 
-    $command = $this->createStub(CreateTokenPaymentMethodCommandInterface::class);
-    $command->method('getId')->willReturn(new IntId(1));
-    $command->method('getBillingAddress')->willReturn(
-        new BillingAddress(
-            firstName: fake()->firstName(),
-            lastName: fake()->lastName(),
-            city: fake()->city(),
-            country: new Country(fake()->countryCode()),
-            postalCode: fake()->postcode(),
-            email: new Email(fake()->email()),
-            phone: new PhoneNumber(fake()->e164PhoneNumber()),
-            addressLine: fake()->address(),
+        $command = $this->createStub(CreateTokenPaymentMethodCommandInterface::class);
+        $command->method('getBillingAddress')->willReturn($billingAddress);
+        $command->method('getToken')->willReturn($token);
+        $command->method('getId')->willReturn($this->aggregateRootId());
+
+        when(fn() => PaymentMethodAggregateRoot::createFromToken($command))
+            ->then(new PaymentMethodCreated($billingAddress, $token->getSource(), $token->aggregateRootId()));
+
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(PaymentMethodAggregateRoot::class)
+            ->getBillingAddress()->toEqual($billingAddress)
+            ->getSource()->toEqual($token->getSource())
+            ->is(PaymentMethodStatusEnum::PENDING)->toBeTrue()
+            ->isValid()->toBeFalse();
+    });
+    it('cannot create payment method from expired token', function () {
+        $token = $this->createStub(TokenAggregateRoot::class);
+        $token->method('isValid')->willReturn(false);
+
+        $command = $this->createStub(CreateTokenPaymentMethodCommandInterface::class);
+        $command->method('getToken')->willReturn($token);
+
+        when(fn() => PaymentMethodAggregateRoot::createFromToken($command))
+            ->expectToFail(new TokenExpiredException());
+    });
+    it('payment method created successfully from source', function () {
+        $card = new CreditCard(
+            new CreditCard\Number('424242', '4242', 'visa'),
+            CreditCard\Expiration::fromMonthAndYear(12, 34),
+            new CreditCard\Holder('Andrea Palladio'),
+            new CreditCard\Cvc(),
+        );
+        $command = $this->createStub(CreatePaymentMethodCommandInterface::class);
+        $command->method('getId')->willReturn($this->aggregateRootId());
+        $command->method('getSource')->willReturn($card);
+
+        when(fn() => PaymentMethodAggregateRoot::create($command))
+            ->then(new PaymentMethodCreated($command->getBillingAddress(), $card));
+
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(PaymentMethodAggregateRoot::class)
+            ->getBillingAddress()->toEqual($command->getBillingAddress())
+            ->getSource()->toEqual($card)
+            ->is(PaymentMethodStatusEnum::PENDING)->toBeTrue()
+            ->isValid()->toBeFalse();
+    });
+    it('payment method succeeded', function () {
+        $gateway = $this->createStub(PaymentMethodInterface::class);
+
+        given(
+            new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
         )
-    );
-    $command->method('getToken')->willReturn($token);
+            ->when(function (PaymentMethodAggregateRoot $paymentMethod) use($gateway) {
+                $paymentMethod->getGatewayPaymentMethods()
+                    ->add(fn() => $gateway);
+                return $paymentMethod;
+            })
+            ->then(new GatewayPaymentMethodAdded($gateway));
 
-    $paymentMethod = PaymentMethodAggregateRoot::createFromToken($command);
-
-    expect($paymentMethod)
-        ->getBillingAddress()->toEqual($command->getBillingAddress())
-        ->getSource()->toEqual($command->getToken()->getCard())
-        ->is(PaymentMethodStatusEnum::PENDING)->toBeTrue();
-});
-
-test('cannot create payment method from expired token', function () {
-    $card = new CreditCard(
-        new CreditCard\Number('424242', '4242', 'visa'),
-        new CreditCard\Expiration(12, 34),
-        new CreditCard\Holder('Andrea Palladio'),
-        new CreditCard\Cvc(),
-    );
-
-    $token = TokenAggregateRoot::reconstituteFromEvents(new IntId(1), generator([
-        new TokenCreated($card),
-        new TokenUsed(),
-    ]));
-
-    $command = $this->createStub(CreateTokenPaymentMethodCommandInterface::class);
-    $command->method('getId')->willReturn(new IntId(1));
-    $command->method('getBillingAddress')->willReturn(
-        new BillingAddress(
-            firstName: fake()->firstName(),
-            lastName: fake()->lastName(),
-            city: fake()->city(),
-            country: new Country(fake()->countryCode()),
-            postalCode: fake()->postcode(),
-            email: new Email(fake()->email()),
-            phone: new PhoneNumber(fake()->e164PhoneNumber()),
-            addressLine: fake()->address(),
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(PaymentMethodAggregateRoot::class)
+            ->is(PaymentMethodStatusEnum::SUCCEEDED)->toBeTrue()
+            ->isValid()->toBeTrue();
+    });
+    it('payment method suspended successfully', function () {
+        given(
+            new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
+            new GatewayPaymentMethodAdded($this->createStub(PaymentMethodInterface::class)),
         )
-    );
-    $command->method('getToken')->willReturn($token);
+            ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->suspend())
+            ->then(new PaymentMethodSuspended());
 
-    PaymentMethodAggregateRoot::createFromToken($command);
-})->throws(TokenExpiredException::class);
-
-test('payment method created successfully', function () {
-    $command = $this->createStub(CreatePaymentMethodCommandInterface::class);
-    $command->method('getId')->willReturn(new IntId(1));
-    $command->method('getBillingAddress')->willReturn(
-        new BillingAddress(
-            firstName: fake()->firstName(),
-            lastName: fake()->lastName(),
-            city: fake()->city(),
-            country: new Country(fake()->countryCode()),
-            postalCode: fake()->postcode(),
-            email: new Email(fake()->email()),
-            phone: new PhoneNumber(fake()->e164PhoneNumber()),
-            addressLine: fake()->address(),
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(PaymentMethodAggregateRoot::class)
+            ->is(PaymentMethodStatusEnum::SUSPENDED)->toBeTrue()
+            ->isValid()->toBeFalse();
+    });
+    it('payment method failed', function () {
+        given(
+            new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
         )
-    );
-    $command->method('getSource')->willReturn(new Cash());
+            ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->fail())
+            ->then(new PaymentMethodFailed());
 
-    $paymentMethod = PaymentMethodAggregateRoot::create($command);
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(PaymentMethodAggregateRoot::class)
+            ->is(PaymentMethodStatusEnum::FAILED)->toBeTrue()
+            ->isValid()->toBeFalse();
+    });
+    it('can be used while valid', function () {
+        $gateway = $this->createStub(PaymentMethodInterface::class);
 
-    expect($paymentMethod)
-        ->getBillingAddress()->toEqual($command->getBillingAddress())
-        ->getSource()->toEqual($command->getSource())
-        ->is(PaymentMethodStatusEnum::PENDING)->toBeTrue();
+        given(
+            new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
+            new GatewayPaymentMethodAdded($gateway),
+        )
+            ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->use())
+            ->nothingShouldHaveHappened();
+
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()));
+    });
+    it('cannot be used when suspended', function () {
+        $gateway = $this->createStub(PaymentMethodInterface::class);
+
+        given(
+            new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
+            new GatewayPaymentMethodAdded($gateway),
+            new PaymentMethodSuspended()
+        )
+            ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->use())
+            ->expectToFail(new PaymentMethodSuspendedException());
+    });
+    it('cannot be used if creation failed', function () {
+        given(
+            new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
+            new PaymentMethodFailed()
+        )
+            ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->use())
+            ->expectToFail(new PaymentMethodSuspendedException());
+    });
+    it('cannot be used while it\'s peniding for creation', function () {
+        given(
+            new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
+        )
+            ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->use())
+            ->expectToFail(new PaymentMethodSuspendedException());
+    });
+    it('cannot fail when succeeded', function () {
+        $gateway = $this->createStub(PaymentMethodInterface::class);
+
+        given(
+            new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
+            new GatewayPaymentMethodAdded($gateway),
+        )
+            ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->fail())
+            ->expectToFail(new RuntimeException('Payment method is not pending to creating'));
+    });
+    it('cannot suspend while pending', function () {
+        given(
+            new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
+        )
+            ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->suspend())
+            ->expectToFail(new PaymentMethodSuspendedException());
+    });
+    it('cannot suspend failed', function () {
+        given(
+            new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
+            new PaymentMethodFailed(),
+        )
+            ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->suspend())
+            ->expectToFail(new PaymentMethodSuspendedException());
+    });
+    it('can update payment method while pending', function () {
+        $command = $this->createStub(UpdatedPaymentMethodCommandInterface::class);
+        $oldBillingAddress = $this->createStub(BillingAddress::class);
+
+        given(
+            new PaymentMethodCreated($oldBillingAddress, $this->createStub(SourceInterface::class)),
+        )
+            ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->update($command))
+            ->then(new PaymentMethodUpdated($command->getBillingAddress()));
+
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(PaymentMethodAggregateRoot::class)
+            ->is(PaymentMethodStatusEnum::PENDING)->toBeTrue()
+            ->isValid()->toBeFalse()
+            ->getBillingAddress()->toEqual($command->getBillingAddress())->not()->toEqual($oldBillingAddress);
+    });
+    it('can update succeeded payment method', function () {
+        $command = $this->createStub(UpdatedPaymentMethodCommandInterface::class);
+        $oldBillingAddress = $this->createStub(BillingAddress::class);
+        $gateway = $this->createStub(PaymentMethodInterface::class);
+
+        given(
+            new PaymentMethodCreated($oldBillingAddress, $this->createStub(SourceInterface::class)),
+            new GatewayPaymentMethodAdded($gateway),
+        )
+            ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->update($command))
+            ->then(new PaymentMethodUpdated($command->getBillingAddress()));
+
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(PaymentMethodAggregateRoot::class)
+            ->is(PaymentMethodStatusEnum::SUCCEEDED)->toBeTrue()
+            ->isValid()->toBeTrue()
+            ->getBillingAddress()->toEqual($command->getBillingAddress())->not()->toEqual($oldBillingAddress);
+    });
+    it('cannot updated failed', function () {
+        $command = $this->createStub(UpdatedPaymentMethodCommandInterface::class);
+        given(
+            new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
+            new PaymentMethodFailed(),
+        )
+            ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->update($command))
+            ->expectToFail(new PaymentMethodSuspendedException());
+    });
+    it('cannot updated suspended', function () {
+        $command = $this->createStub(UpdatedPaymentMethodCommandInterface::class);
+        given(
+            new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
+            new PaymentMethodSuspended(),
+        )
+            ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->update($command))
+            ->expectToFail(new PaymentMethodSuspendedException());
+    });
 });
 
-test('payment method succeeded', function () {
-    $billingAddress = new BillingAddress(
-        firstName: fake()->firstName(),
-        lastName: fake()->lastName(),
-        city: fake()->city(),
-        country: new Country(fake()->countryCode()),
-        postalCode: fake()->postcode(),
-        email: new Email(fake()->email()),
-        phone: new PhoneNumber(fake()->e164PhoneNumber()),
-        addressLine: fake()->address(),
-    );
-    $source = new Cash();
+describe('gateway-only flow', function () {
+    it('creates payment method', function () {
+        $gateway = $this->createStub(PaymentMethodInterface::class);
+        $gateway->method('getId')->willReturn($this->createStub(AggregateRootId::class));
+        $gateway->method('getGatewayId')->willReturn($this->createStub(AggregateRootId::class));
+        $gateway->method('isValid')->willReturn(true);
+        $gateway->method('getBillingAddress')->willReturn($this->createStub(BillingAddress::class));
+        $gateway->method('getSource')->willReturn($this->createStub(CreditCard::class));
 
-    $paymentMethod = PaymentMethodAggregateRoot::reconstituteFromEvents(
-        new IntId(1),
-        generator([new PaymentMethodCreated($billingAddress, $source)])
-    );
+        when(function(PaymentMethodAggregateRoot $paymentMethod) use($gateway) {
+            $paymentMethod->getGatewayPaymentMethods()->add(fn() => $gateway);
+            return $paymentMethod;
+        })
+            ->then(new GatewayPaymentMethodAdded($gateway));
+    });
+    it('updates payment method', function () {
+        $gateway = $this->createStub(PaymentMethodInterface::class);
+        $gateway->method('getId')->willReturn($this->createStub(AggregateRootId::class));
+        $gateway->method('getGatewayId')->willReturn($this->createStub(AggregateRootId::class));
+        $gateway->method('isValid')->willReturn(true);
+        $gateway->method('getBillingAddress')->willReturn($this->createStub(BillingAddress::class));
+        $gateway->method('getSource')->willReturn($this->createStub(CreditCard::class));
 
-    $paymentMethod->success();
+        given(
+            new GatewayPaymentMethodAdded($gateway)
+        )
+            ->when(function(PaymentMethodAggregateRoot $paymentMethod) use($gateway) {
+                $paymentMethod->getGatewayPaymentMethods()
+                    ->update($gateway->getGatewayId(), $gateway->getId(), fn() => $gateway);
+                return $paymentMethod;
+            })
+            ->then(new GatewayPaymentMethodUpdated($gateway));
+    });
+    it('does not suspend payment method if there are more available', function () {
+        $gateway = $this->createStub(PaymentMethodInterface::class);
+        $gateway->method('getGatewayId')->willReturn($this->createStub(AggregateRootId::class));
+        $gateway->method('getBillingAddress')->willReturn($this->createStub(BillingAddress::class));
+        $gateway->method('getSource')->willReturn($this->createStub(CreditCard::class));
 
-    expect($paymentMethod)
-        ->getBillingAddress()->toEqual($billingAddress)
-        ->getSource()->toEqual($source)
-        ->is(PaymentMethodStatusEnum::SUCCEEDED)->toBeTrue();
+        $gateway2 = clone $gateway;
+        $gateway2->method('getId')->willReturn($this->createStub(AggregateRootId::class));
+        $gateway2->method('isValid')->willReturn(true);
+
+        $gatewaySuspended = clone $gateway;
+        $gatewaySuspended->method('isValid')->willReturn(false);
+
+        $gateway->method('getId')->willReturn($this->createStub(AggregateRootId::class));
+        $gateway->method('isValid')->willReturn(true);
+
+        given(
+            new GatewayPaymentMethodAdded($gateway),
+            new GatewayPaymentMethodAdded($gateway2),
+        )
+            ->when(function(PaymentMethodAggregateRoot $paymentMethod) use($gateway) {
+                $paymentMethod->getGatewayPaymentMethods()
+                    ->suspend($gateway->getGatewayId(), $gateway->getId(), fn() => $gateway);
+                return $paymentMethod;
+            })
+            ->then(new GatewayPaymentMethodSuspended($gateway));
+
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(PaymentMethodAggregateRoot::class)
+            ->isValid()->toBeTrue()
+            ->is(PaymentMethodStatusEnum::SUCCEEDED)->toBeTrue();
+    });
+    it('suspend if all gateway method are suspended', function () {
+        $gateway = $this->createStub(PaymentMethodInterface::class);
+        $gateway->method('getId')->willReturn($this->createStub(AggregateRootId::class));
+        $gateway->method('getGatewayId')->willReturn($this->createStub(AggregateRootId::class));
+        $gateway->method('getBillingAddress')->willReturn($this->createStub(BillingAddress::class));
+        $gateway->method('getSource')->willReturn($this->createStub(CreditCard::class));
+
+        $gatewaySuspended = clone $gateway;
+        $gateway->method('isValid')->willReturn(true);
+        $gatewaySuspended->method('isValid')->willReturn(false);
+
+        given(
+            new GatewayPaymentMethodAdded($gateway),
+        )
+            ->when(function(PaymentMethodAggregateRoot $paymentMethod) use($gatewaySuspended) {
+                $paymentMethod->getGatewayPaymentMethods()
+                    ->suspend($gatewaySuspended->getGatewayId(), $gatewaySuspended->getId(), fn() => $gatewaySuspended);
+
+                return $paymentMethod;
+            })
+            ->then(new GatewayPaymentMethodSuspended($gatewaySuspended));
+
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(PaymentMethodAggregateRoot::class)
+            ->isValid()->toBeFalse()
+            ->is(PaymentMethodStatusEnum::SUSPENDED)->toBeTrue();
+    });
 });
 
-test('payment method failed', function () {
-    $billingAddress = new BillingAddress(
-        firstName: fake()->firstName(),
-        lastName: fake()->lastName(),
-        city: fake()->city(),
-        country: new Country(fake()->countryCode()),
-        postalCode: fake()->postcode(),
-        email: new Email(fake()->email()),
-        phone: new PhoneNumber(fake()->e164PhoneNumber()),
-        addressLine: fake()->address(),
-    );
-    $source = new Cash();
+test('payment method is serialized and unserialized successfully', function () {
+    $paymentMethod = $this->retrieveAggregateRoot($this->newAggregateRootId());
+    $serialized = serialize($paymentMethod);
+    /** @var PaymentMethodAggregateRoot $paymentMethod */
+    $paymentMethod = unserialize($serialized);
 
-    $paymentMethod = PaymentMethodAggregateRoot::reconstituteFromEvents(
-        new IntId(1),
-        generator([new PaymentMethodCreated($billingAddress, $source)])
-    );
+    $gateway = $this->createStub(PaymentMethodInterface::class);
+    $gateway->method('getId')->willReturn($this->createStub(AggregateRootId::class));
+    $gateway->method('getGatewayId')->willReturn($this->createStub(AggregateRootId::class));
+    $gateway->method('isValid')->willReturn(true);
 
-    $paymentMethod->fail();
-
-    expect($paymentMethod)
-        ->getBillingAddress()->toEqual($billingAddress)
-        ->getSource()->toEqual($source)
-        ->is(PaymentMethodStatusEnum::FAILED)->toBeTrue();
-});
-
-test('payment method suspended successfully', function () {
-    $billingAddress = new BillingAddress(
-        firstName: fake()->firstName(),
-        lastName: fake()->lastName(),
-        city: fake()->city(),
-        country: new Country(fake()->countryCode()),
-        postalCode: fake()->postcode(),
-        email: new Email(fake()->email()),
-        phone: new PhoneNumber(fake()->e164PhoneNumber()),
-        addressLine: fake()->address(),
-    );
-    $source = new Cash();
-
-    $paymentMethod = PaymentMethodAggregateRoot::reconstituteFromEvents(
-        new IntId(1),
-        generator([
-            new PaymentMethodCreated($billingAddress, $source),
-            new PaymentMethodSucceeded()
-        ])
-    );
-
-    $paymentMethod->suspend();
-
-    expect($paymentMethod)
-        ->getBillingAddress()->toEqual($billingAddress)
-        ->getSource()->toEqual($source)
-        ->is(PaymentMethodStatusEnum::SUSPENDED)->toBeTrue();
+    $paymentMethod->getGatewayPaymentMethods()->add(fn() => $gateway);
+    expect($paymentMethod->releaseEvents())->toContainEqual(new GatewayPaymentMethodAdded($gateway));
 });

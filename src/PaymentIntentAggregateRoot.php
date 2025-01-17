@@ -1,19 +1,16 @@
 <?php
 
+declare(strict_types=1);
+
 namespace PaymentSystem;
 
+use EventSauce\EventSourcing\AggregateRoot;
 use EventSauce\EventSourcing\AggregateRootId;
 use EventSauce\EventSourcing\AggregateRootWithAggregates;
-use EventSauce\EventSourcing\Snapshotting\AggregateRootWithSnapshotting;
-use EventSauce\EventSourcing\Snapshotting\Snapshot;
-use Money\Currency;
 use Money\Money;
 use PaymentSystem\Commands\AuthorizePaymentCommandInterface;
 use PaymentSystem\Commands\CapturePaymentCommandInterface;
-use PaymentSystem\Enum\ECICodesEnum;
 use PaymentSystem\Enum\PaymentIntentStatusEnum;
-use PaymentSystem\Enum\SupportedVersionsEnum;
-use PaymentSystem\Enum\ThreeDSStatusEnum;
 use PaymentSystem\Events\PaymentIntentAuthorized;
 use PaymentSystem\Events\PaymentIntentCanceled;
 use PaymentSystem\Events\PaymentIntentCaptured;
@@ -24,13 +21,16 @@ use PaymentSystem\Exceptions\CardExpiredException;
 use PaymentSystem\Exceptions\DeclineUnavailableException;
 use PaymentSystem\Exceptions\InvalidAmountException;
 use PaymentSystem\Exceptions\PaymentMethodSuspendedException;
-use PaymentSystem\ValueObjects\GenericId;
+use PaymentSystem\Gateway\Events\GatewayPaymentIntentAuthorized;
+use PaymentSystem\Gateway\Events\GatewayPaymentIntentCaptured;
+use PaymentSystem\Gateway\Events\GatewayPaymentIntentDeclined;
 use PaymentSystem\ValueObjects\ThreeDSResult;
 
-class PaymentIntentAggregateRoot implements AggregateRootWithSnapshotting
+class PaymentIntentAggregateRoot implements AggregateRoot
 {
-    use SnapshotBehaviour;
-    use AggregateRootWithAggregates;
+    use AggregateRootWithAggregates {
+        __construct as __aggregateRootConstruct;
+    }
 
     private const CAPTURABLE_STATUSES = [
         PaymentIntentStatusEnum::REQUIRES_CAPTURE,
@@ -54,6 +54,18 @@ class PaymentIntentAggregateRoot implements AggregateRootWithSnapshotting
     private Money $authCaptureDiff;
 
     private Gateway\PaymentIntentAggregate $gateway;
+
+    private function __construct(AggregateRootId $aggregateRootId)
+    {
+        $this->__aggregateRootConstruct($aggregateRootId);
+        $this->gateway = new Gateway\PaymentIntentAggregate($this->eventRecorder());
+        $this->registerAggregate($this->gateway);
+    }
+
+    public function getTenderId(): ?AggregateRootId
+    {
+        return $this->tenderId;
+    }
 
     public function getMoney(): Money
     {
@@ -80,11 +92,6 @@ class PaymentIntentAggregateRoot implements AggregateRootWithSnapshotting
         return $this->status === $status;
     }
 
-    public function getPaymentMethodId(): ?AggregateRootId
-    {
-        return $this->paymentMethodId ?? null;
-    }
-
     public function getStatus(): PaymentIntentStatusEnum
     {
         return $this->status;
@@ -107,24 +114,21 @@ class PaymentIntentAggregateRoot implements AggregateRootWithSnapshotting
 
     public static function authorize(AuthorizePaymentCommandInterface $command): static
     {
-        $command->getTender()->isValid() || throw new PaymentMethodSuspendedException();
-
-        $source = $command->getTender()->getSource();
-
-        $source->isValid() || throw new CardExpiredException();
         $command->getMoney()->isZero() && throw InvalidAmountException::notZero();
         $command->getMoney()->isNegative() && throw InvalidAmountException::notNegative();
 
+        if ($command->getTender() !== null) {
+            $command->getTender()->use();
+        }
+
         $self = new static($command->getId());
-        $self->recordThat(
-            new PaymentIntentAuthorized(
-                $command->getMoney(),
-                $command->getTender()?->aggregateRootId(),
-                $command->getMerchantDescriptor(),
-                $command->getDescription(),
-                $command->getThreeDSResult(),
-            )
-        );
+        $self->recordThat(new PaymentIntentAuthorized(
+            $command->getMoney(),
+            $command->getTender()?->aggregateRootId(),
+            $command->getMerchantDescriptor(),
+            $command->getDescription(),
+            $command->getThreeDSResult(),
+        ));
 
         return $self;
     }
@@ -135,11 +139,6 @@ class PaymentIntentAggregateRoot implements AggregateRootWithSnapshotting
             throw CaptureUnavailableException::unsupportedIntentStatus($this->status);
         }
 
-        if ($this->status === PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD) {
-            $command->getTender() !== null || throw CaptureUnavailableException::paymentMethodIsRequired();
-            $command->getTender()->isValid() || throw new PaymentMethodSuspendedException();
-        }
-
         $money = new Money($command->getAmount() ?? $this->money->getAmount(), $this->money->getCurrency());
 
         $money->isZero() && throw InvalidAmountException::notZero();
@@ -147,6 +146,11 @@ class PaymentIntentAggregateRoot implements AggregateRootWithSnapshotting
 
         if ($this->money->lessThan($money)) {
             throw InvalidAmountException::notGreaterThanAuthorized($this->money->getAmount());
+        }
+
+        if ($this->status === PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD) {
+            $command->getTender() !== null || throw CaptureUnavailableException::paymentMethodIsRequired();
+            $command->getTender()->use();
         }
 
         $this->recordThat(new PaymentIntentCaptured(
@@ -179,78 +183,99 @@ class PaymentIntentAggregateRoot implements AggregateRootWithSnapshotting
         return $this;
     }
 
+    public function __sleep()
+    {
+        unset($this->eventRecorder);
+        return array_keys((array)$this);
+    }
+
+    public function __wakeup(): void
+    {
+        foreach ($this->aggregatesInsideRoot as $aggregate) {
+            $aggregate->__construct($this->eventRecorder());
+        }
+    }
+
+    // Event Listeners
+
     protected function applyPaymentIntentAuthorized(PaymentIntentAuthorized $event): void
     {
-        $this->money = $event->money;
-        $this->merchantDescriptor = $event->merchantDescriptor;
-        $this->description = $event->description;
-        $this->threeDSResult = $event->threeDSResult;
-        $this->tenderId = $event->tenderId;
-        $this->status = isset($event->tenderId) ? PaymentIntentStatusEnum::REQUIRES_CAPTURE : PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD;
-
+        $this->onAuthorized(
+            $event->money,
+            $event->merchantDescriptor,
+            $event->description,
+            $event->threeDSResult,
+            $event->tenderId
+        );
         $this->gateway = new Gateway\PaymentIntentAggregate($this->eventRecorder());
         $this->registerAggregate($this->gateway);
     }
 
     protected function applyPaymentIntentCaptured(PaymentIntentCaptured $event): void
     {
-        $newMoney = isset($event->amount) ? new Money($event->amount, $this->money->getCurrency()) : $this->money;
-        $this->authCaptureDiff = $this->money->subtract($newMoney);
-        $this->money = $newMoney;
-        $this->status = PaymentIntentStatusEnum::SUCCEEDED;
+        $this->onCaptured($event->amount, $event->tenderId);
     }
 
     protected function applyPaymentIntentCanceled(): void
     {
-        $this->status = PaymentIntentStatusEnum::CANCELED;
+        $this->onCanceled();
     }
 
     protected function applyPaymentIntentDeclined(PaymentIntentDeclined $event): void
     {
+        $this->onDeclined($event->reason);
+    }
+
+    protected function applyGatewayPaymentIntentAuthorized(GatewayPaymentIntentAuthorized $event): void
+    {
+        $this->onAuthorized(
+            $event->paymentIntent->getMoney(),
+            $event->paymentIntent->getMerchantDescriptor(),
+            $event->paymentIntent->getDescription(),
+            $event->paymentIntent->getThreeDS(),
+            $event->paymentIntent->getPaymentMethodId(),
+        );
+    }
+
+    protected function applyGatewayPaymentIntentCaptured(GatewayPaymentIntentCaptured $event): void
+    {
+        $this->onCaptured($event->paymentIntent->getMoney()->getAmount(), $event->paymentIntent->getPaymentMethodId());
+    }
+
+    protected function applyGatewayPaymentIntentCanceled(): void
+    {
+        $this->onCanceled();
+    }
+
+    protected function onAuthorized(Money $money, string $merchantDescriptor, string $description, ?ThreeDSResult $threeDS = null, ?AggregateRootId $paymentMethodId = null): void
+    {
+        $this->money = $money;
+        $this->merchantDescriptor = $merchantDescriptor;
+        $this->description = $description;
+        $this->threeDSResult = $threeDS;
+        if (isset($paymentMethodId)) {
+            $this->tenderId = $paymentMethodId;
+        }
+        $this->status = isset($this->tenderId) ? PaymentIntentStatusEnum::REQUIRES_CAPTURE : PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD;
+    }
+
+    protected function onCaptured(string $amount = null, AggregateRootId $tenderId = null): void
+    {
+        $newMoney = isset($amount) ? new Money($amount, $this->money->getCurrency()) : $this->money;
+        $this->authCaptureDiff = $this->money->subtract($newMoney);
+        $this->money = $newMoney;
+        $this->tenderId = $tenderId ?? $this->tenderId;
+        $this->status = PaymentIntentStatusEnum::SUCCEEDED;
+    }
+
+    protected function onCanceled(): void
+    {
+        $this->status = PaymentIntentStatusEnum::CANCELED;
+    }
+
+    protected function onDeclined(string $reason): void
+    {
         $this->status = PaymentIntentStatusEnum::DECLINED;
-        $this->declineReason = $event->reason;
-    }
-
-    protected function applySnapshot(Snapshot $snapshot): void
-    {
-        $this->aggregateRootVersion = $snapshot->aggregateRootVersion();
-
-        $this->tenderId = new GenericId($snapshot->state()['tenderId']);
-        $this->status = PaymentIntentStatusEnum::from($snapshot->state()['state']);
-        $this->money = new Money(
-            $snapshot->state()['money']['amount'],
-            new Currency($snapshot->state()['money']['currency'])
-        );
-        $this->merchantDescriptor = $snapshot->state()['merchantDescriptor'];
-        $this->description = $snapshot->state()['description'];
-        $this->declineReason = $snapshot->state()['declineReason'];
-        $this->threeDSResult = new ThreeDSResult(
-            ThreeDSStatusEnum::from($snapshot->state()['threeDSResult']['status']),
-            $snapshot->state()['threeDSResult']['authenticationValue'],
-            ECICodesEnum::from($snapshot->state()['threeDSResult']['eci']),
-            $snapshot->state()['threeDSResult']['dsTransactionId'],
-            $snapshot->state()['threeDSResult']['acsTransactionId'],
-            $snapshot->state()['threeDSResult']['cardToken'] ?? null,
-            SupportedVersionsEnum::from($snapshot->state()['threeDSResult']['version'])
-        );
-    }
-
-    protected function createSnapshotState(): array
-    {
-        return [
-            'tenderId' => $this->tenderId->toString(),
-            'status' => $this->status->value,
-            'money' => $this->money->jsonSerialize(),
-            'merchantDescriptor' => $this->merchantDescriptor,
-            'description' => $this->description,
-            'declineReason' => $this->declineReason,
-            'threeDSResult' => $this->threeDSResult->jsonSerialize(),
-        ];
-    }
-
-    public function __sleep()
-    {
-        unset($this->eventRecorder);
-        return array_keys((array)$this);
+        $this->declineReason = $reason;
     }
 }

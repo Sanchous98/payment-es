@@ -6,9 +6,9 @@ use EventSauce\EventSourcing\AggregateAppliesKnownEvents;
 use EventSauce\EventSourcing\AggregateRootId;
 use EventSauce\EventSourcing\EventRecorder;
 use EventSauce\EventSourcing\EventSourcedAggregate;
+use PaymentSystem\Gateway\Events\GatewayPaymentMethodSuspended;
 use PaymentSystem\Gateway\Events\GatewayPaymentMethodUpdated;
 use PaymentSystem\Gateway\Resources\PaymentMethodInterface;
-use PaymentSystem\Gateway\Resources\TokenInterface;
 
 class PaymentMethodsAggregate implements EventSourcedAggregate
 {
@@ -48,6 +48,16 @@ class PaymentMethodsAggregate implements EventSourcedAggregate
         return $this;
     }
 
+    public function suspend(AggregateRootId $gatewayId, AggregateRootId $id, callable $callback): static
+    {
+        $old = $this->paymentMethods[$gatewayId->toString()][$id->toString()];
+        $new = $callback($old, $this);
+
+        $this->eventRecorder->recordThat(new GatewayPaymentMethodSuspended($new));
+
+        return $this;
+    }
+
     /**
      * @param callable(PaymentMethodInterface): bool $callback
      */
@@ -74,8 +84,12 @@ class PaymentMethodsAggregate implements EventSourcedAggregate
 
     protected function applyGatewayPaymentMethodUpdated(Events\GatewayPaymentMethodUpdated $event): void
     {
-        $this->paymentMethods[$event->paymentMethod->getGatewayId()->toString()][$event->paymentMethod->getId(
-        )->toString()] = $event->paymentMethod;
+        $this->paymentMethods[$event->paymentMethod->getGatewayId()->toString()][$event->paymentMethod->getId()->toString()] = $event->paymentMethod;
+    }
+
+    protected function applyGatewayPaymentMethodSuspended(Events\GatewayPaymentMethodSuspended $event): void
+    {
+        $this->paymentMethods[$event->paymentMethod->getGatewayId()->toString()][$event->paymentMethod->getId()->toString()] = $event->paymentMethod;
     }
 
     public function __sleep(): array

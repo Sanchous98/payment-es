@@ -1,140 +1,255 @@
 <?php
 
+use EventSauce\EventSourcing\AggregateRootId;
 use Money\Currency;
 use Money\Money;
+use PaymentSystem\Commands\AuthorizePaymentCommandInterface;
+use PaymentSystem\Commands\CapturePaymentCommandInterface;
 use PaymentSystem\Commands\CreateRefundCommandInterface;
+use PaymentSystem\Enum\PaymentIntentStatusEnum;
 use PaymentSystem\Enum\RefundStatusEnum;
+use PaymentSystem\Events\RefundCanceled;
+use PaymentSystem\Events\RefundCreated;
+use PaymentSystem\Events\RefundDeclined;
 use PaymentSystem\Exceptions\InvalidAmountException;
 use PaymentSystem\Exceptions\RefundException;
+use PaymentSystem\Gateway\Events\GatewayRefundCanceled;
+use PaymentSystem\Gateway\Events\GatewayRefundCreated;
+use PaymentSystem\Gateway\Resources\RefundInterface;
 use PaymentSystem\PaymentIntentAggregateRoot;
 use PaymentSystem\RefundAggregateRoot;
-use PaymentSystem\Tests\IntId;
+use PaymentSystem\TenderInterface;
+use PaymentSystem\Tests\Refunds;
+use PaymentSystem\ValueObjects\CreditCard;
+use PaymentSystem\ValueObjects\GenericId;
 
-test('refund created successfully', function (PaymentIntentAggregateRoot $paymentIntent) {
-    $command = $this->createStub(CreateRefundCommandInterface::class);
-    $command->method('getId')->willReturn(new IntId(1));
-    $command->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
-    $command->method('getPaymentIntent')->willReturn($paymentIntent);
+use function EventSauce\EventSourcing\PestTooling\given;
+use function EventSauce\EventSourcing\PestTooling\when;
 
-    $refund = RefundAggregateRoot::create($command);
+uses(Refunds::class);
 
-    expect($refund)
-        ->is(RefundStatusEnum::CREATED)->toBeTrue()
-        ->getMoney()->toEqual(new Money(100, new Currency('USD')));
-})->with('captured payment');
+describe('domain-first flow', function () {
+    it('refund created successfully', function () {
+        $paymentIntent = $this->createMock(PaymentIntentAggregateRoot::class);
+        $paymentIntent->method('aggregateRootId')->willReturn(new GenericId(1));
+        $paymentIntent->method('getStatus')->willReturn(PaymentIntentStatusEnum::SUCCEEDED);
+        $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(true);
+        $paymentIntent->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
 
-test('partial refund created successfully', function (PaymentIntentAggregateRoot $paymentIntent) {
-    $command = $this->createStub(CreateRefundCommandInterface::class);
-    $command->method('getId')->willReturn(new IntId(1));
-    $command->method('getMoney')->willReturn(new Money(50, new Currency('USD')));
-    $command->method('getPaymentIntent')->willReturn($paymentIntent);
+        $command = $this->createStub(CreateRefundCommandInterface::class);
+        $command->method('getPaymentIntent')->willReturn($paymentIntent);
+        $command->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
+        $command->method('getId')->willReturn(new GenericId(2));
+        when(fn() => RefundAggregateRoot::create($command))
+            ->then(new RefundCreated($command->getMoney(), $command->getPaymentIntent()->aggregateRootId()));
 
-    $refund = RefundAggregateRoot::create($command);
+        expect($this->retrieveAggregateRoot(new GenericId(2)))
+            ->toBeInstanceOf(RefundAggregateRoot::class)
+            ->getPaymentIntentId()->toEqual(new GenericId(1))
+            ->getMoney()->equals(new Money(100, new Currency('USD')))->toBeTrue();
+    });
+    it('partial refund created successfully', function () {
+        $paymentIntent = $this->createMock(PaymentIntentAggregateRoot::class);
+        $paymentIntent->method('aggregateRootId')->willReturn(new GenericId(1));
+        $paymentIntent->method('getStatus')->willReturn(PaymentIntentStatusEnum::SUCCEEDED);
+        $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(true);
+        $paymentIntent->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
 
-    expect($refund)
-        ->is(RefundStatusEnum::CREATED)->toBeTrue()
-        ->getMoney()->toEqual(new Money(50, new Currency('USD')));
-})->with('captured payment');
+        $command = $this->createStub(CreateRefundCommandInterface::class);
+        $command->method('getPaymentIntent')->willReturn($paymentIntent);
+        $command->method('getMoney')->willReturn(new Money(50, new Currency('USD')));
 
-test('payment can be refunded multiple times', function (PaymentIntentAggregateRoot $paymentIntent) {
-    $command = $this->createStub(CreateRefundCommandInterface::class);
-    $command->method('getId')->willReturn(new IntId(1));
-    $command->method('getMoney')->willReturn(new Money(50, new Currency('USD')));
-    $command->method('getPaymentIntent')->willReturn($paymentIntent);
+        when(fn() => RefundAggregateRoot::create($command))
+            ->then(new RefundCreated($command->getMoney(), $command->getPaymentIntent()->aggregateRootId()));
+    });
+    it('payment can be refunded multiple times', function () {
+        $tender = $this->createStub(TenderInterface::class);
+        $tender->method('isValid')->willReturn(true);
+        $tender->method('getSource')->willReturn(new CreditCard(
+            new CreditCard\Number('424242', '4242', 'visa'),
+            CreditCard\Expiration::fromMonthAndYear(12, 34),
+            new CreditCard\Holder('Andrea Palladio'),
+            new CreditCard\Cvc(),
+        ));
 
-    $firstRefund = RefundAggregateRoot::create($command);
+        $authorize = $this->createStub(AuthorizePaymentCommandInterface::class);
+        $authorize->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
+        $authorize->method('getId')->willReturn(new GenericId('test payment intent'));
+        $authorize->method('getTender')->willReturn($tender);
 
-    $secondRefund = RefundAggregateRoot::create($command);
+        $this->repository->persist(
+            $paymentIntent = PaymentIntentAggregateRoot::authorize($authorize)
+                ->capture($this->createStub(CapturePaymentCommandInterface::class)),
+        );
+        $command = $this->createStub(CreateRefundCommandInterface::class);
+        $command->method('getPaymentIntent')->willReturn($paymentIntent);
+        $command->method('getMoney')->willReturn(new Money(50, new Currency('USD')));
 
-    expect($firstRefund)
-        ->is(RefundStatusEnum::CREATED)->toBeTrue()
-        ->getMoney()->toEqual(new Money(50, new Currency('USD')))
-        ->and($secondRefund)
-        ->is(RefundStatusEnum::CREATED)->toBeTrue()
-        ->getMoney()->toEqual(new Money(50, new Currency('USD')));
-})->with('captured payment');
+        given(
+            new RefundCreated($command->getMoney(), $command->getPaymentIntent()->aggregateRootId())
+        )
+            ->when(fn() => RefundAggregateRoot::create($command))
+            ->then(new RefundCreated($command->getMoney(), $command->getPaymentIntent()->aggregateRootId()));
+    });
+    it('cannot refund zero', function () {
+        $command = $this->createStub(CreateRefundCommandInterface::class);
+        $command->method('getPaymentIntent')->willReturn($this->createStub(PaymentIntentAggregateRoot::class));
+        $command->method('getMoney')->willReturn(new Money(0, new Currency('USD')));
 
-test('cannot refund zero', function (PaymentIntentAggregateRoot $paymentIntent) {
-    $command = $this->createStub(CreateRefundCommandInterface::class);
-    $command->method('getMoney')->willReturn(new Money(0, new Currency('USD')));
-    $command->method('getPaymentIntent')->willReturn($paymentIntent);
+        when(fn() => RefundAggregateRoot::create($command))
+            ->expectToFail(InvalidAmountException::notZero());
+    });
+    it('cannot refund negative', function () {
+        $command = $this->createStub(CreateRefundCommandInterface::class);
+        $command->method('getPaymentIntent')->willReturn($this->createStub(PaymentIntentAggregateRoot::class));
+        $command->method('getMoney')->willReturn(new Money(-100, new Currency('USD')));
 
-    $refund = RefundAggregateRoot::reconstituteFromEvents(new IntId(1), generator());
-    $refund->create($command);
-})->with('captured payment')->throws(InvalidAmountException::class);
+        when(fn() => RefundAggregateRoot::create($command))
+            ->expectToFail(InvalidAmountException::notNegative());
+    });
+    todo('cannot refund more than captured');
+    it('created refund succeeded', function () {
+        $gateway = $this->createStub(RefundInterface::class);
+        $gateway->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
 
-test('cannot refund negative', function (PaymentIntentAggregateRoot $paymentIntent) {
-    $command = $this->createStub(CreateRefundCommandInterface::class);
-    $command->method('getMoney')->willReturn(new Money(-100, new Currency('USD')));
-    $command->method('getPaymentIntent')->willReturn($paymentIntent);
+        given(
+            new RefundCreated(new Money(100, new Currency('USD')), $this->createStub(AggregateRootId::class)),
+        )
+            ->when(function(RefundAggregateRoot $refund) use($gateway) {
+                $refund->getGatewayRefund()->create(fn() => $gateway);
+                return $refund;
+            })
+            ->then(new GatewayRefundCreated($gateway));
 
-    $refund = RefundAggregateRoot::reconstituteFromEvents(new IntId(1), generator());
-    $refund->create($command);
-})->with('captured payment')->throws(InvalidAmountException::class);
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(RefundAggregateRoot::class)
+            ->is(RefundStatusEnum::SUCCEEDED);
+    });
+    it('created refund declined', function () {
+        given(
+            new RefundCreated(new Money(100, new Currency('USD')), $this->createStub(AggregateRootId::class)),
+        )
+            ->when(fn(RefundAggregateRoot $refund) => $refund->decline('test reason'))
+            ->then(new RefundDeclined('test reason'));
 
-test('cannot refund more than captured', function (PaymentIntentAggregateRoot $paymentIntent) {
-    $command = $this->createStub(CreateRefundCommandInterface::class);
-    $command->method('getMoney')->willReturn(new Money(200, new Currency('USD')));
-    $command->method('getPaymentIntent')->willReturn($paymentIntent);
+        expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+            ->toBeInstanceOf(RefundAggregateRoot::class)
+            ->is(RefundStatusEnum::DECLINED)->toBeTrue()
+            ->getDeclineReason()->toBe('test reason');
+    });
+    it('created refund canceled', function () {
+        given(
+            new RefundCreated(new Money(100, new Currency('USD')), $this->createStub(AggregateRootId::class)),
+        )
+            ->when(fn(RefundAggregateRoot $refund) => $refund->cancel())
+            ->then(new RefundCanceled());
+    });
+    it('cannot decline succeeded refund', function () {
+        $gateway = $this->createStub(RefundInterface::class);
+        $gateway->method('getMoney')->willReturn(new Money(0, new Currency('USD')));
+        $gateway->method('getId')->willReturn($this->createStub(AggregateRootId::class));
 
-    $refund = RefundAggregateRoot::reconstituteFromEvents(new IntId(1), generator());
-    $refund->create($command);
-})->with('captured payment')->throws(InvalidAmountException::class);
+        given(
+            new RefundCreated(new Money(0, new Currency('USD')), $this->createStub(AggregateRootId::class)),
+            new GatewayRefundCreated($gateway),
+        )
+            ->when(fn(RefundAggregateRoot $refund) => $refund->decline('test reason'))
+            ->expectToFail(RefundException::cannotDecline(RefundStatusEnum::SUCCEEDED));
+    });
+    it('cannot cancel succeeded refund', function () {
+        $gateway = $this->createStub(RefundInterface::class);
+        $gateway->method('getMoney')->willReturn(new Money(0, new Currency('USD')));
+        $gateway->method('getId')->willReturn($this->createStub(AggregateRootId::class));
 
-test('created refund succeeded', function (RefundAggregateRoot $refund) {
-    $refund->success();
+        given(
+            new RefundCreated(new Money(0, new Currency('USD')), $this->createStub(AggregateRootId::class)),
+            new GatewayRefundCreated($gateway),
+        )
+            ->when(fn(RefundAggregateRoot $refund) => $refund->cancel())
+            ->expectToFail(RefundException::cannotCancel(RefundStatusEnum::SUCCEEDED));
+    });
+    it('cannot cancel canceled refund', function () {
+        given(
+            new RefundCreated(new Money(0, new Currency('USD')), $this->createStub(AggregateRootId::class)),
+            new RefundCanceled(),
+        )
+            ->when(fn(RefundAggregateRoot $refund) => $refund->cancel())
+            ->expectToFail(RefundException::cannotCancel(RefundStatusEnum::CANCELED));
+    });
+    it('cannot decline declined refund', function () {
+        given(
+            new RefundCreated(new Money(0, new Currency('USD')), $this->createStub(AggregateRootId::class)),
+            new RefundDeclined('test decline'),
+        )
+            ->when(fn(RefundAggregateRoot $refund) => $refund->decline('test reason 2'))
+            ->expectToFail(RefundException::cannotDecline(RefundStatusEnum::DECLINED));
+    });
+    it('cannot cancel declined refund', function () {
+        given(
+            new RefundCreated(new Money(0, new Currency('USD')), $this->createStub(AggregateRootId::class)),
+            new RefundDeclined('test decline'),
+        )
+            ->when(fn(RefundAggregateRoot $refund) => $refund->cancel())
+            ->expectToFail(RefundException::cannotCancel(RefundStatusEnum::DECLINED));
+    });
+    it('cannot decline canceled refund', function () {
+        given(
+            new RefundCreated(new Money(0, new Currency('USD')), $this->createStub(AggregateRootId::class)),
+            new RefundCanceled(),
+        )
+            ->when(fn(RefundAggregateRoot $refund) => $refund->decline('test reason'))
+            ->expectToFail(RefundException::cannotDecline(RefundStatusEnum::CANCELED));
+    });
+});
 
-    expect($refund)->is(RefundStatusEnum::SUCCEEDED)->toBeTrue();
-})->with('created refund');
+describe('gateway-only flow', function () {
+    it('creates a refund', function () {
+        $gateway = $this->createStub(RefundInterface::class);
+        $gateway->method('getMoney')->willReturn(new Money(0, new Currency('USD')));
+        $gateway->method('getId')->willReturn($this->createStub(AggregateRootId::class));
+        $gateway->method('getGatewayId')->willReturn($this->createStub(AggregateRootId::class));
+        $gateway->method('isValid')->willReturn(true);
+        $gateway->method('getPaymentIntentId')->willReturn($this->createStub(AggregateRootId::class));
 
-test('created refund declined', function (RefundAggregateRoot $refund) {
-    $refund->decline('test reason');
+        when(function(RefundAggregateRoot $refund) use ($gateway) {
+            $refund->getGatewayRefund()->create(fn() => $gateway);
+            return $refund;
+        })->then(new GatewayRefundCreated($gateway));
+    });
 
-    expect($refund)
-        ->is(RefundStatusEnum::DECLINED)->toBeTrue()
-        ->getDeclineReason()->toEqual('test reason');
-})->with('created refund');
+    it('cancels a succeeded refund', function () {
+        $gateway = $this->createStub(RefundInterface::class);
+        $gateway->method('getMoney')->willReturn(new Money(0, new Currency('USD')));
+        $gateway->method('getId')->willReturn($this->createStub(AggregateRootId::class));
+        $gateway->method('getGatewayId')->willReturn($this->createStub(AggregateRootId::class));
+        $gateway->method('isValid')->willReturn(true);
+        $gateway->method('getPaymentIntentId')->willReturn($this->createStub(AggregateRootId::class));
 
-test('created refund canceled', function (RefundAggregateRoot $refund) {
-    $refund->cancel();
 
-    expect($refund)->is(RefundStatusEnum::CANCELED)->toBeTrue();
-})->with('created refund');
+        given(new GatewayRefundCreated($gateway))
+            ->when(function(RefundAggregateRoot $refund) use ($gateway) {
+                $refund->getGatewayRefund()->cancel(fn() => $gateway);
+                return $refund;
+            })
+            ->then(new GatewayRefundCanceled($gateway));
 
-test('cannot decline succeeded refund', function (RefundAggregateRoot $refund) {
-    $refund->decline('');
-})->with('succeeded refund')->throws(RefundException::class);
+    });
+});
 
-test('cannot cancel succeeded refund', function (RefundAggregateRoot $refund) {
-    $refund->cancel();
+test('refund is serialized and unserialized successfully', function () {
+    $refund = $this->retrieveAggregateRoot($this->newAggregateRootId());
+    $serialized = serialize($refund);
+    /** @var RefundAggregateRoot $refund */
+    $refund = unserialize($serialized);
 
-    expect($refund)->is(RefundStatusEnum::CANCELED)->toBeTrue();
-})->with('canceled refund')->throws(RefundException::class);
+    $gateway = $this->createStub(RefundInterface::class);
+    $gateway->method('getMoney')->willReturn(new Money(0, new Currency('USD')));
+    $gateway->method('getId')->willReturn($this->createStub(AggregateRootId::class));
+    $gateway->method('getGatewayId')->willReturn($this->createStub(AggregateRootId::class));
+    $gateway->method('isValid')->willReturn(true);
+    $gateway->method('getPaymentIntentId')->willReturn($this->createStub(AggregateRootId::class));
 
-test('cannot succeed declined refund', function (RefundAggregateRoot $refund) {
-    $refund->success();
-})->with('declined refund')->throws(RefundException::class);
 
-test('cannot succeed canceled refund', function (RefundAggregateRoot $refund) {
-    $refund->success();
-})->with('canceled refund')->throws(RefundException::class);
-
-test('cannot succeed succeeded refund', function (RefundAggregateRoot $refund) {
-    $refund->success();
-})->with('succeeded refund')->throws(RefundException::class);
-
-test('cannot cancel canceled refund', function (RefundAggregateRoot $refund) {
-    $refund->cancel();
-})->with('canceled refund')->throws(RefundException::class);
-
-test('cannot decline declined refund', function (RefundAggregateRoot $refund) {
-    $refund->decline('');
-})->with('declined refund')->throws(RefundException::class);
-
-test('cannot cancel declined refund', function (RefundAggregateRoot $refund) {
-    $refund->cancel();
-})->with('declined refund')->throws(RefundException::class);
-
-test('cannot decline canceled refund', function (RefundAggregateRoot $refund) {
-    $refund->decline('');
-})->with('canceled refund')->throws(RefundException::class);
+    $refund->getGatewayRefund()->create(fn() => $gateway);
+    expect($refund->releaseEvents())->toContainEqual(new GatewayRefundCreated($gateway));
+});

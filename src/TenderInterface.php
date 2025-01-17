@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace PaymentSystem;
 
 use EventSauce\EventSourcing\AggregateRoot;
@@ -13,7 +15,7 @@ interface TenderInterface extends AggregateRoot
 
     public function getSource(): SourceInterface;
 
-    public function use(callable $callback = null): TenderInterface;
+    public function use(?callable $callback = null): TenderInterface;
 
     /**
      * @return PaymentMethodInterface[]|TokenInterface[]

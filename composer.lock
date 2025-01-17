@@ -4,7 +4,7 @@
     "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
     "This file is @generated automatically"
   ],
-  "content-hash": "32081803d9c1cd66814dbd5b93e8be0f",
+  "content-hash": "6057292fc3d63a1aa98e9401c03f8d16",
   "packages": [
     {
       "name": "eventsauce/clock",
@@ -201,16 +201,16 @@
     },
     {
       "name": "giggsey/libphonenumber-for-php-lite",
-      "version": "8.13.52",
+      "version": "8.13.53",
       "source": {
         "type": "git",
         "url": "https://github.com/giggsey/libphonenumber-for-php-lite.git",
-        "reference": "9d48e4e112d4a24d46a5fb7c65d000ca3d3faac1"
+        "reference": "ead50d96f01c191f1c8dd504a20f0062dbd9a2ed"
       },
       "dist": {
         "type": "zip",
-        "url": "https://api.github.com/repos/giggsey/libphonenumber-for-php-lite/zipball/9d48e4e112d4a24d46a5fb7c65d000ca3d3faac1",
-        "reference": "9d48e4e112d4a24d46a5fb7c65d000ca3d3faac1",
+        "url": "https://api.github.com/repos/giggsey/libphonenumber-for-php-lite/zipball/ead50d96f01c191f1c8dd504a20f0062dbd9a2ed",
+        "reference": "ead50d96f01c191f1c8dd504a20f0062dbd9a2ed",
         "shasum": ""
       },
       "require": {
@@ -280,7 +280,7 @@
         "issues": "https://github.com/giggsey/libphonenumber-for-php-lite/issues",
         "source": "https://github.com/giggsey/libphonenumber-for-php-lite"
       },
-      "time": "2024-12-13T09:11:09+00:00"
+      "time": "2025-01-15T17:07:47+00:00"
     },
     {
       "name": "moneyphp/money",
@@ -790,6 +790,100 @@
         "source": "https://github.com/doctrine/deprecations/tree/1.1.4"
       },
       "time": "2024-12-07T21:18:45+00:00"
+    },
+    {
+      "name": "eventsauce/pest-utilities",
+      "version": "3.4.1",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/EventSaucePHP/PestUtilities.git",
+        "reference": "578d76b73a1ee1026c9cdbc8ffb03fc921ef854d"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/EventSaucePHP/PestUtilities/zipball/578d76b73a1ee1026c9cdbc8ffb03fc921ef854d",
+        "reference": "578d76b73a1ee1026c9cdbc8ffb03fc921ef854d",
+        "shasum": ""
+      },
+      "require": {
+        "eventsauce/eventsauce": "^3.0",
+        "eventsauce/test-utilities": "^3.4",
+        "php": "^8.0"
+      },
+      "type": "library",
+      "autoload": {
+        "files": [
+          "./functions.php"
+        ]
+      },
+      "notification-url": "https://packagist.org/downloads/",
+      "license": [
+        "MIT"
+      ],
+      "authors": [
+        {
+          "name": "Frank de Jonge",
+          "email": "info@frenky.net"
+        }
+      ],
+      "description": "Test utilities for EventSauce.",
+      "support": {
+        "issues": "https://github.com/EventSaucePHP/PestUtilities/issues",
+        "source": "https://github.com/EventSaucePHP/PestUtilities/tree/3.4.1"
+      },
+      "time": "2023-06-23T10:15:14+00:00"
+    },
+    {
+      "name": "eventsauce/test-utilities",
+      "version": "3.6.1",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/EventSaucePHP/TestUtilities.git",
+        "reference": "54f44f6592c4bc677b731b763254b5c3ce2d441a"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/EventSaucePHP/TestUtilities/zipball/54f44f6592c4bc677b731b763254b5c3ce2d441a",
+        "reference": "54f44f6592c4bc677b731b763254b5c3ce2d441a",
+        "shasum": ""
+      },
+      "require": {
+        "eventsauce/eventsauce": "^2.0 | ^3.0",
+        "php": "^8.0",
+        "phpunit/phpunit": "^8.5|^9.4|^10.0|^11.0"
+      },
+      "type": "library",
+      "extra": {
+        "branch-alias": {
+          "dev-version/2.0": "2.x-dev"
+        }
+      },
+      "autoload": {
+        "psr-4": {
+          "EventSauce\\EventSourcing\\TestUtilities\\": "./"
+        }
+      },
+      "notification-url": "https://packagist.org/downloads/",
+      "license": [
+        "MIT"
+      ],
+      "authors": [
+        {
+          "name": "Frank de Jonge",
+          "email": "info@frenky.net"
+        }
+      ],
+      "description": "Test utilities for EventSauce.",
+      "support": {
+        "source": "https://github.com/EventSaucePHP/TestUtilities/tree/3.6.1"
+      },
+      "funding": [
+        {
+          "url": "https://github.com/frankdejonge",
+          "type": "github"
+        }
+      ],
+      "time": "2024-12-11T13:47:17+00:00"
     },
     {
       "name": "fakerphp/faker",
@@ -1349,16 +1443,16 @@
     },
     {
       "name": "pestphp/pest",
-      "version": "v3.7.1",
+      "version": "v3.7.2",
       "source": {
         "type": "git",
         "url": "https://github.com/pestphp/pest.git",
-        "reference": "bf3178473dcaa53b0458f21dfdb271306ea62512"
+        "reference": "709ecb1ba2641fc0c4653ebe1fd8a402bbf4d18b"
       },
       "dist": {
         "type": "zip",
-        "url": "https://api.github.com/repos/pestphp/pest/zipball/bf3178473dcaa53b0458f21dfdb271306ea62512",
-        "reference": "bf3178473dcaa53b0458f21dfdb271306ea62512",
+        "url": "https://api.github.com/repos/pestphp/pest/zipball/709ecb1ba2641fc0c4653ebe1fd8a402bbf4d18b",
+        "reference": "709ecb1ba2641fc0c4653ebe1fd8a402bbf4d18b",
         "shasum": ""
       },
       "require": {
@@ -1369,17 +1463,17 @@
         "pestphp/pest-plugin-arch": "^3.0.0",
         "pestphp/pest-plugin-mutate": "^3.0.5",
         "php": "^8.2.0",
-        "phpunit/phpunit": "^11.5.1"
+        "phpunit/phpunit": "^11.5.3"
       },
       "conflict": {
         "filp/whoops": "<2.16.0",
-        "phpunit/phpunit": ">11.5.1",
+        "phpunit/phpunit": ">11.5.3",
         "sebastian/exporter": "<6.0.0",
         "webmozart/assert": "<1.11.0"
       },
       "require-dev": {
         "pestphp/pest-dev-tools": "^3.3.0",
-        "pestphp/pest-plugin-type-coverage": "^3.2.0",
+        "pestphp/pest-plugin-type-coverage": "^3.2.3",
         "symfony/process": "^7.2.0"
       },
       "bin": [
@@ -1445,7 +1539,7 @@
       ],
       "support": {
         "issues": "https://github.com/pestphp/pest/issues",
-        "source": "https://github.com/pestphp/pest/tree/v3.7.1"
+        "source": "https://github.com/pestphp/pest/tree/v3.7.2"
       },
       "funding": [
         {
@@ -1457,7 +1551,7 @@
           "type": "github"
         }
       ],
-      "time": "2024-12-12T11:52:01+00:00"
+      "time": "2025-01-19T17:35:09+00:00"
     },
     {
       "name": "pestphp/pest-plugin",
@@ -2401,16 +2495,16 @@
     },
     {
       "name": "phpunit/phpunit",
-      "version": "11.5.1",
+      "version": "11.5.3",
       "source": {
         "type": "git",
         "url": "https://github.com/sebastianbergmann/phpunit.git",
-        "reference": "2b94d4f2450b9869fa64a46fd8a6a41997aef56a"
+        "reference": "30e319e578a7b5da3543073e30002bf82042f701"
       },
       "dist": {
         "type": "zip",
-        "url": "https://api.github.com/repos/sebastianbergmann/phpunit/zipball/2b94d4f2450b9869fa64a46fd8a6a41997aef56a",
-        "reference": "2b94d4f2450b9869fa64a46fd8a6a41997aef56a",
+        "url": "https://api.github.com/repos/sebastianbergmann/phpunit/zipball/30e319e578a7b5da3543073e30002bf82042f701",
+        "reference": "30e319e578a7b5da3543073e30002bf82042f701",
         "shasum": ""
       },
       "require": {
@@ -2424,14 +2518,14 @@
         "phar-io/manifest": "^2.0.4",
         "phar-io/version": "^3.2.1",
         "php": ">=8.2",
-        "phpunit/php-code-coverage": "^11.0.7",
+        "phpunit/php-code-coverage": "^11.0.8",
         "phpunit/php-file-iterator": "^5.1.0",
         "phpunit/php-invoker": "^5.0.1",
         "phpunit/php-text-template": "^4.0.1",
         "phpunit/php-timer": "^7.0.1",
         "sebastian/cli-parser": "^3.0.2",
-        "sebastian/code-unit": "^3.0.1",
-        "sebastian/comparator": "^6.2.1",
+        "sebastian/code-unit": "^3.0.2",
+        "sebastian/comparator": "^6.3.0",
         "sebastian/diff": "^6.0.2",
         "sebastian/environment": "^7.2.0",
         "sebastian/exporter": "^6.3.0",
@@ -2482,7 +2576,7 @@
       "support": {
         "issues": "https://github.com/sebastianbergmann/phpunit/issues",
         "security": "https://github.com/sebastianbergmann/phpunit/security/policy",
-        "source": "https://github.com/sebastianbergmann/phpunit/tree/11.5.1"
+        "source": "https://github.com/sebastianbergmann/phpunit/tree/11.5.3"
       },
       "funding": [
         {
@@ -2498,7 +2592,7 @@
           "type": "tidelift"
         }
       ],
-      "time": "2024-12-11T10:52:48+00:00"
+      "time": "2025-01-13T09:36:00+00:00"
     },
     {
       "name": "psr/container",
@@ -2826,16 +2920,16 @@
     },
     {
       "name": "sebastian/comparator",
-      "version": "6.2.1",
+      "version": "6.3.0",
       "source": {
         "type": "git",
         "url": "https://github.com/sebastianbergmann/comparator.git",
-        "reference": "43d129d6a0f81c78bee378b46688293eb7ea3739"
+        "reference": "d4e47a769525c4dd38cea90e5dcd435ddbbc7115"
       },
       "dist": {
         "type": "zip",
-        "url": "https://api.github.com/repos/sebastianbergmann/comparator/zipball/43d129d6a0f81c78bee378b46688293eb7ea3739",
-        "reference": "43d129d6a0f81c78bee378b46688293eb7ea3739",
+        "url": "https://api.github.com/repos/sebastianbergmann/comparator/zipball/d4e47a769525c4dd38cea90e5dcd435ddbbc7115",
+        "reference": "d4e47a769525c4dd38cea90e5dcd435ddbbc7115",
         "shasum": ""
       },
       "require": {
@@ -2847,6 +2941,9 @@
       },
       "require-dev": {
         "phpunit/phpunit": "^11.4"
+      },
+      "suggest": {
+        "ext-bcmath": "For comparing BcMath\\Number objects"
       },
       "type": "library",
       "extra": {
@@ -2891,7 +2988,7 @@
       "support": {
         "issues": "https://github.com/sebastianbergmann/comparator/issues",
         "security": "https://github.com/sebastianbergmann/comparator/security/policy",
-        "source": "https://github.com/sebastianbergmann/comparator/tree/6.2.1"
+        "source": "https://github.com/sebastianbergmann/comparator/tree/6.3.0"
       },
       "funding": [
         {
@@ -2899,7 +2996,7 @@
           "type": "github"
         }
       ],
-      "time": "2024-10-31T05:30:08+00:00"
+      "time": "2025-01-06T10:28:19+00:00"
     },
     {
       "name": "sebastian/complexity",

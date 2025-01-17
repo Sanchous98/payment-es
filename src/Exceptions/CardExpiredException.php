@@ -1,7 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace PaymentSystem\Exceptions;
 
-class CardExpiredException extends \RuntimeException
+use RuntimeException;
+
+class CardExpiredException extends RuntimeException
 {
 }

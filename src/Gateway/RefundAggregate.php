@@ -46,6 +46,21 @@ class RefundAggregate implements EventSourcedAggregate
         return $this;
     }
 
+    public function getRefund(): RefundInterface
+    {
+        return $this->refund;
+    }
+
+    protected function applyGatewayRefundCreated(GatewayRefundCreated $event): void
+    {
+        $this->refund = $event->refund;
+    }
+
+    protected function applyGatewayRefundCanceled(GatewayRefundCanceled $event): void
+    {
+        $this->refund = $event->refund;
+    }
+
     public function __sleep(): array
     {
         unset($this->eventRecorder);

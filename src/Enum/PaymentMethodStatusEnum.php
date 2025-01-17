@@ -1,15 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 namespace PaymentSystem\Enum;
 
 enum PaymentMethodStatusEnum: string
 {
     case PENDING = 'pending';
     case FAILED = 'failed';
-
-    /**
-     * @todo value is incorrect due to backwards compatibility. Fix in 2.0
-     */
-    case SUCCEEDED = 'success';
+    case SUCCEEDED = 'succeeded';
     case SUSPENDED = 'suspended';
 }
