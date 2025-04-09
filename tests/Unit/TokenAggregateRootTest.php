@@ -28,6 +28,7 @@ describe('domain-first flow', function () {
         );
         $command = $this->createStub(CreateTokenCommandInterface::class);
         $command->method('getId')->willReturn($this->newAggregateRootId());
+        $command->method('getBillingAddress')->willReturn(null);
         $command->method('getCard')->willReturn($card);
 
         when(fn() => TokenAggregateRoot::create($command))

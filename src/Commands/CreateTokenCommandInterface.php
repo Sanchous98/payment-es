@@ -14,5 +14,5 @@ interface CreateTokenCommandInterface
 
     public function getCard(): CreditCard;
 
-    public function getBillingAddress(): BillingAddress;
+    public function getBillingAddress(): ?BillingAddress;
 }

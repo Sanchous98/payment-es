@@ -24,7 +24,7 @@ class TokenAggregateRoot implements AggregateRoot, TenderInterface
         __construct as private __aggregateRootConstruct;
     }
 
-    private BillingAddress $billingAddress;
+    private ?BillingAddress $billingAddress = null;
 
     private TokenizedSourceInterface $source;
 
@@ -81,7 +81,7 @@ class TokenAggregateRoot implements AggregateRoot, TenderInterface
         return $this->source;
     }
 
-    public function getBillingAddress(): BillingAddress
+    public function getBillingAddress(): ?BillingAddress
     {
         return $this->billingAddress;
     }
@@ -161,6 +161,9 @@ class TokenAggregateRoot implements AggregateRoot, TenderInterface
             $this->source = $event->token->getSource();
         }
 
+        if (!isset($this->billingAddress)) {
+            $this->billingAddress = $event->token->getBillingAddress();
+        }
         $this->status = TokenStatusEnum::VALID;
     }
 }

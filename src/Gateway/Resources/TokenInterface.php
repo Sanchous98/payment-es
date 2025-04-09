@@ -9,5 +9,5 @@ interface TokenInterface extends ResourceInterface
 {
     public function getSource(): TokenizedSourceInterface;
 
-    public function getBillingAddress(): BillingAddress;
+    public function getBillingAddress(): ?BillingAddress;
 }

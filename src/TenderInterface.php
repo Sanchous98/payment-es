@@ -16,7 +16,7 @@ interface TenderInterface extends AggregateRoot
 
     public function getSource(): SourceInterface;
 
-    public function getBillingAddress(): BillingAddress;
+    public function getBillingAddress(): ?BillingAddress;
 
     public function use(?callable $callback = null): TenderInterface;
 

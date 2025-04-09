@@ -9,7 +9,7 @@ use PaymentSystem\ValueObjects\BillingAddress;
 
 readonly class TokenCreated
 {
-    public function __construct(public TokenizedSourceInterface $source, public BillingAddress $billingAddress)
+    public function __construct(public TokenizedSourceInterface $source, public ?BillingAddress $billingAddress = null)
     {
     }
 }
