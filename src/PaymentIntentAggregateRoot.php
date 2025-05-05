@@ -17,13 +17,11 @@ use PaymentSystem\Events\PaymentIntentCaptured;
 use PaymentSystem\Events\PaymentIntentDeclined;
 use PaymentSystem\Exceptions\CancelUnavailableException;
 use PaymentSystem\Exceptions\CaptureUnavailableException;
-use PaymentSystem\Exceptions\CardExpiredException;
 use PaymentSystem\Exceptions\DeclineUnavailableException;
 use PaymentSystem\Exceptions\InvalidAmountException;
-use PaymentSystem\Exceptions\PaymentMethodSuspendedException;
 use PaymentSystem\Gateway\Events\GatewayPaymentIntentAuthorized;
 use PaymentSystem\Gateway\Events\GatewayPaymentIntentCaptured;
-use PaymentSystem\Gateway\Events\GatewayPaymentIntentDeclined;
+use PaymentSystem\ValueObjects\MerchantDescriptor;
 use PaymentSystem\ValueObjects\ThreeDSResult;
 
 class PaymentIntentAggregateRoot implements AggregateRoot
@@ -43,7 +41,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
 
     private Money $money;
 
-    private string $merchantDescriptor;
+    private MerchantDescriptor $merchantDescriptor;
 
     private string $description;
 
@@ -54,6 +52,8 @@ class PaymentIntentAggregateRoot implements AggregateRoot
     private Money $authCaptureDiff;
 
     private Gateway\PaymentIntentAggregate $gateway;
+
+    private ?AggregateRootId $subscriptionId = null;
 
     private function __construct(AggregateRootId $aggregateRootId)
     {
@@ -72,7 +72,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         return $this->money;
     }
 
-    public function getMerchantDescriptor(): string
+    public function getMerchantDescriptor(): MerchantDescriptor
     {
         return $this->merchantDescriptor;
     }
@@ -102,6 +102,11 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         return $this->declineReason;
     }
 
+    public function getSubscriptionId(): ?AggregateRootId
+    {
+        return $this->subscriptionId;
+    }
+
     public function getAuthAndCaptureDifference(): Money
     {
         return $this->authCaptureDiff;
@@ -128,6 +133,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
             $command->getMerchantDescriptor(),
             $command->getDescription(),
             $command->getThreeDSResult(),
+            $command->getSubscription()?->aggregateRootId(),
         ));
 
         return $self;
@@ -247,7 +253,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         $this->onCanceled();
     }
 
-    protected function onAuthorized(Money $money, string $merchantDescriptor, string $description, ?ThreeDSResult $threeDS = null, ?AggregateRootId $paymentMethodId = null): void
+    private function onAuthorized(Money $money, MerchantDescriptor $merchantDescriptor, string $description, ?ThreeDSResult $threeDS = null, ?AggregateRootId $paymentMethodId = null): void
     {
         $this->money = $money;
         $this->merchantDescriptor = $merchantDescriptor;
@@ -259,7 +265,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         $this->status = isset($this->tenderId) ? PaymentIntentStatusEnum::REQUIRES_CAPTURE : PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD;
     }
 
-    protected function onCaptured(string $amount = null, AggregateRootId $tenderId = null): void
+    private function onCaptured(string $amount = null, AggregateRootId $tenderId = null): void
     {
         $newMoney = isset($amount) ? new Money($amount, $this->money->getCurrency()) : $this->money;
         $this->authCaptureDiff = $this->money->subtract($newMoney);
@@ -268,12 +274,12 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         $this->status = PaymentIntentStatusEnum::SUCCEEDED;
     }
 
-    protected function onCanceled(): void
+    private function onCanceled(): void
     {
         $this->status = PaymentIntentStatusEnum::CANCELED;
     }
 
-    protected function onDeclined(string $reason): void
+    private function onDeclined(string $reason): void
     {
         $this->status = PaymentIntentStatusEnum::DECLINED;
         $this->declineReason = $reason;

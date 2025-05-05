@@ -79,9 +79,7 @@ class DisputeAggregateRoot implements AggregateRoot
 
     public function win(): static
     {
-        if ($this->status !== DisputeStatusEnum::CREATED) {
-            throw new DisputeException();
-        }
+        $this->status !== DisputeStatusEnum::CREATED || throw new DisputeException();
 
         $this->recordThat(new DisputeWon());
 
@@ -90,9 +88,7 @@ class DisputeAggregateRoot implements AggregateRoot
 
     public function loose(): static
     {
-        if ($this->status !== DisputeStatusEnum::CREATED) {
-            throw new DisputeException();
-        }
+        $this->status !== DisputeStatusEnum::CREATED || throw new DisputeException();
 
         $this->recordThat(new DisputeLost());
 

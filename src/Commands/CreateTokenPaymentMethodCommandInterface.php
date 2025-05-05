@@ -6,7 +6,6 @@ namespace PaymentSystem\Commands;
 
 use EventSauce\EventSourcing\AggregateRootId;
 use PaymentSystem\TokenAggregateRoot;
-use PaymentSystem\ValueObjects\BillingAddress;
 
 interface CreateTokenPaymentMethodCommandInterface
 {

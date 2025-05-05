@@ -7,6 +7,7 @@ namespace PaymentSystem\Commands;
 use EventSauce\EventSourcing\AggregateRootId;
 use PaymentSystem\Contracts\SourceInterface;
 use PaymentSystem\ValueObjects\BillingAddress;
+use PaymentSystem\ValueObjects\ThreeDSResult;
 
 interface CreatePaymentMethodCommandInterface
 {
@@ -15,4 +16,6 @@ interface CreatePaymentMethodCommandInterface
     public function getBillingAddress(): BillingAddress;
 
     public function getSource(): SourceInterface;
+
+    public function getThreeDS(): ?ThreeDSResult;
 }

@@ -17,7 +17,7 @@ readonly class PhoneNumber implements Stringable, JsonSerializable
     /**
      * @throws NumberParseException
      */
-    public function __construct(string $number)
+    public function __construct(string|PhoneNumber $number)
     {
         $this->number = PhoneNumberUtil::getInstance()->parse($number);
     }

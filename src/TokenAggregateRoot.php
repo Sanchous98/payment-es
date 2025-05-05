@@ -91,11 +91,9 @@ class TokenAggregateRoot implements AggregateRoot, TenderInterface
         return $this->declineReason;
     }
 
-    public function decline(string $reason): self
+    public function decline(string $reason): static
     {
-        if (!$this->isValid()) {
-            throw new TokenExpiredException();
-        }
+        $this->isValid() || throw new TokenExpiredException();
 
         $this->recordThat(new TokenDeclined($reason));
 
@@ -104,9 +102,7 @@ class TokenAggregateRoot implements AggregateRoot, TenderInterface
 
     public function use(?callable $callback = null): static
     {
-        if (!$this->isValid()) {
-            throw new TokenExpiredException();
-        }
+        $this->isValid() || throw new TokenExpiredException();
 
         isset($callback) && $callback($this);
         $this->recordThat(new TokenUsed());

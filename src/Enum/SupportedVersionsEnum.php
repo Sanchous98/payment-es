@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace PaymentSystem\Enum;
 
-enum SupportedVersionsEnum: string
+enum SupportedVersionsEnum: int
 {
-    case V220 = '2.2.0';
+    case V220 = 220;
 }

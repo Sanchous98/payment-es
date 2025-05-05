@@ -32,6 +32,7 @@ use PaymentSystem\TokenAggregateRoot;
 use PaymentSystem\ValueObjects\BillingAddress;
 use PaymentSystem\ValueObjects\CreditCard;
 use PaymentSystem\ValueObjects\GenericId;
+use PaymentSystem\ValueObjects\MerchantDescriptor;
 use PaymentSystem\ValueObjects\ThreeDSResult;
 
 use function EventSauce\EventSourcing\PestTooling\given;
@@ -45,8 +46,9 @@ describe('domain-first flow', function () {
         $command = $this->createStub(AuthorizePaymentCommandInterface::class);
         $command->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
         $command->method('getDescription')->willReturn('test description');
-        $command->method('getMerchantDescriptor')->willReturn('test merchant descriptor');
+        $command->method('getMerchantDescriptor')->willReturn(new MerchantDescriptor('test', ' merchant descriptor'));
         $command->method('getThreeDSResult')->willReturn($threeDS);
+        $command->method('getSubscription')->willReturn(null);
 
         when(fn() => PaymentIntentAggregateRoot::authorize($command))
             ->then(new PaymentIntentAuthorized(
@@ -61,7 +63,7 @@ describe('domain-first flow', function () {
             ->toBeInstanceOf(PaymentIntentAggregateRoot::class)
             ->getMoney()->equals(new Money(100, new Currency('USD')))->toBeTrue()
             ->getDescription()->toBe('test description')
-            ->getMerchantDescriptor()->toBe('test merchant descriptor')
+            ->getMerchantDescriptor()->toEqual(new MerchantDescriptor('test', ' merchant descriptor'))
             ->getThreeDSResult()->toBe($threeDS)
             ->is(PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD)->toBeTrue()
             ->getStatus()->toBe(PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD);
@@ -71,8 +73,9 @@ describe('domain-first flow', function () {
         $command = $this->createStub(AuthorizePaymentCommandInterface::class);
         $command->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
         $command->method('getDescription')->willReturn('test description');
-        $command->method('getMerchantDescriptor')->willReturn('test merchant descriptor');
+        $command->method('getMerchantDescriptor')->willReturn(new MerchantDescriptor('test', ' merchant descriptor'));
         $command->method('getThreeDSResult')->willReturn($threeDS);
+        $command->method('getSubscription')->willReturn(null);
 
         $paymentMethod = $this->createStub(PaymentMethodAggregateRoot::class);
         $paymentMethod->method('isValid')->willReturn(true);
@@ -91,7 +94,7 @@ describe('domain-first flow', function () {
             ->toBeInstanceOf(PaymentIntentAggregateRoot::class)
             ->getMoney()->equals(new Money(100, new Currency('USD')))->toBeTrue()
             ->getDescription()->toBe('test description')
-            ->getMerchantDescriptor()->toBe('test merchant descriptor')
+            ->getMerchantDescriptor()->toEqual(new MerchantDescriptor('test', ' merchant descriptor'))
             ->getThreeDSResult()->toBe($threeDS)
             ->is(PaymentIntentStatusEnum::REQUIRES_CAPTURE)->toBeTrue()
             ->getStatus()->toBe(PaymentIntentStatusEnum::REQUIRES_CAPTURE)
@@ -102,8 +105,9 @@ describe('domain-first flow', function () {
         $command = $this->createStub(AuthorizePaymentCommandInterface::class);
         $command->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
         $command->method('getDescription')->willReturn('test description');
-        $command->method('getMerchantDescriptor')->willReturn('test merchant descriptor');
+        $command->method('getMerchantDescriptor')->willReturn(new MerchantDescriptor('test', ' merchant descriptor'));
         $command->method('getThreeDSResult')->willReturn($threeDS);
+        $command->method('getSubscription')->willReturn(null);
 
         $token = $this->createStub(TokenAggregateRoot::class);
         $token->method('isValid')->willReturn(true);
@@ -122,7 +126,7 @@ describe('domain-first flow', function () {
             ->toBeInstanceOf(PaymentIntentAggregateRoot::class)
             ->getMoney()->equals(new Money(100, new Currency('USD')))->toBeTrue()
             ->getDescription()->toBe('test description')
-            ->getMerchantDescriptor()->toBe('test merchant descriptor')
+            ->getMerchantDescriptor()->toEqual(new MerchantDescriptor('test', ' merchant descriptor'))
             ->getThreeDSResult()->toBe($threeDS)
             ->is(PaymentIntentStatusEnum::REQUIRES_CAPTURE)->toBeTrue()
             ->getStatus()->toBe(PaymentIntentStatusEnum::REQUIRES_CAPTURE)
@@ -173,7 +177,7 @@ describe('domain-first flow', function () {
         given(new PaymentIntentAuthorized(
             new Money(100, new Currency('USD')),
             $this->createStub(AggregateRootId::class),
-            'test merchant descriptor',
+            new MerchantDescriptor('test', ' merchant descriptor'),
             'test description',
         ))->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($this->createStub(CapturePaymentCommandInterface::class)))
             ->then(new PaymentIntentCaptured());
@@ -182,7 +186,7 @@ describe('domain-first flow', function () {
             ->toBeInstanceOf(PaymentIntentAggregateRoot::class)
             ->getMoney()->equals(new Money(100, new Currency('USD')))->toBeTrue()
             ->getDescription()->toBe('test description')
-            ->getMerchantDescriptor()->toBe('test merchant descriptor')
+            ->getMerchantDescriptor()->toEqual(new MerchantDescriptor('test', ' merchant descriptor'))
             ->is(PaymentIntentStatusEnum::SUCCEEDED)->toBeTrue()
             ->getStatus()->toBe(PaymentIntentStatusEnum::SUCCEEDED)
             ->getAuthAndCaptureDifference()->equals(new Money(0, new Currency('USD')));
@@ -194,7 +198,7 @@ describe('domain-first flow', function () {
         given(new PaymentIntentAuthorized(
             new Money(100, new Currency('USD')),
             $this->createStub(AggregateRootId::class),
-            'test merchant descriptor',
+            new MerchantDescriptor('test', ' merchant descriptor'),
             'test description',
         ))->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($command))
             ->then(new PaymentIntentCaptured($command->getAmount()));
@@ -203,7 +207,7 @@ describe('domain-first flow', function () {
             ->toBeInstanceOf(PaymentIntentAggregateRoot::class)
             ->getMoney()->equals(new Money(50, new Currency('USD')))->toBeTrue()
             ->getDescription()->toBe('test description')
-            ->getMerchantDescriptor()->toBe('test merchant descriptor')
+            ->getMerchantDescriptor()->toEqual(new MerchantDescriptor('test', ' merchant descriptor'))
             ->is(PaymentIntentStatusEnum::SUCCEEDED)->toBeTrue()
             ->getStatus()->toBe(PaymentIntentStatusEnum::SUCCEEDED)
             ->getAuthAndCaptureDifference()->equals(new Money(50, new Currency('USD')));
