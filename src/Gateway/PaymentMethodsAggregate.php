@@ -63,9 +63,11 @@ class PaymentMethodsAggregate implements EventSourcedAggregate
      */
     public function find(callable $callback): ?PaymentMethodInterface
     {
-        foreach ($this->paymentMethods as $paymentMethod) {
-            if ($callback($paymentMethod)) {
-                return $paymentMethod;
+        foreach ($this->paymentMethods as $gateway) {
+            foreach ($gateway as $paymentMethod) {
+                if ($callback($paymentMethod)) {
+                    return $paymentMethod;
+                }
             }
         }
 

@@ -42,9 +42,11 @@ class TokensAggregate implements EventSourcedAggregate
      */
     public function find(callable $callback): ?TokenInterface
     {
-        foreach ($this->tokens as $token) {
-            if ($callback($token)) {
-                return $token;
+        foreach ($this->tokens as $gateway) {
+            foreach ($gateway as $token) {
+                if ($callback($token)) {
+                    return $token;
+                }
             }
         }
 
