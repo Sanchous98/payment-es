@@ -91,7 +91,7 @@ class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
         $self = new static($command->getId());
         $self->recordThat(
             new PaymentMethodCreated(
-                $command->getBillingAddress(),
+                $command->getToken()->getBillingAddress(),
                 $command->getToken()->getSource(),
                 $command->getToken()->aggregateRootId()
             )

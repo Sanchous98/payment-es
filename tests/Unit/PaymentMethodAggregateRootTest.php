@@ -30,18 +30,18 @@ uses(PaymentMethods::class);
 describe('domain-first flow', function () {
     it('payment method created successfully from token', function () {
         $token = $this->createStub(TokenAggregateRoot::class);
+        $billingAddress = $this->createStub(BillingAddress::class);
         $token->method('getSource')->willReturn(new CreditCard(
             new CreditCard\Number('424242', '4242', 'visa'),
             CreditCard\Expiration::fromMonthAndYear(12, 34),
             new CreditCard\Holder('Andrea Palladio'),
             new CreditCard\Cvc(),
         ));
+        $token->method('getBillingAddress')->willReturn($billingAddress);
         $token->method('getSource')->willReturn($token->getSource());
         $token->method('isValid')->willReturn(true);
-        $billingAddress = $this->createStub(BillingAddress::class);
 
         $command = $this->createStub(CreateTokenPaymentMethodCommandInterface::class);
-        $command->method('getBillingAddress')->willReturn($billingAddress);
         $command->method('getToken')->willReturn($token);
         $command->method('getId')->willReturn($this->aggregateRootId());
 
