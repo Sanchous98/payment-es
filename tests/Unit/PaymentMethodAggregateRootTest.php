@@ -46,7 +46,7 @@ describe('domain-first flow', function () {
         $command->method('getId')->willReturn($this->aggregateRootId());
 
         when(fn() => PaymentMethodAggregateRoot::createFromToken($command))
-            ->then(new PaymentMethodCreated($billingAddress, $token->getSource(), $token->aggregateRootId()));
+            ->then(new PaymentMethodCreated($billingAddress, $token->getSource(), null, $token->aggregateRootId()));
 
         expect($this->retrieveAggregateRoot($this->aggregateRootId()))
             ->toBeInstanceOf(PaymentMethodAggregateRoot::class)

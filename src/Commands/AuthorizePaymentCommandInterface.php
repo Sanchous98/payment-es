@@ -6,7 +6,9 @@ namespace PaymentSystem\Commands;
 
 use EventSauce\EventSourcing\AggregateRootId;
 use Money\Money;
+use PaymentSystem\SubscriptionAggregateRoot;
 use PaymentSystem\TenderInterface;
+use PaymentSystem\ValueObjects\MerchantDescriptor;
 use PaymentSystem\ValueObjects\ThreeDSResult;
 
 interface AuthorizePaymentCommandInterface
@@ -17,9 +19,11 @@ interface AuthorizePaymentCommandInterface
 
     public function getTender(): ?TenderInterface;
 
-    public function getMerchantDescriptor(): string;
+    public function getMerchantDescriptor(): MerchantDescriptor;
 
     public function getDescription(): string;
 
     public function getThreeDSResult(): ?ThreeDSResult;
+
+    public function getSubscription(): ?SubscriptionAggregateRoot;
 }

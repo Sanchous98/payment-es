@@ -23,6 +23,7 @@ use PaymentSystem\Gateway\Events\GatewayPaymentMethodSuspended;
 use PaymentSystem\Gateway\Events\GatewayPaymentMethodUpdated;
 use PaymentSystem\Gateway\Resources\PaymentMethodInterface;
 use PaymentSystem\ValueObjects\BillingAddress;
+use PaymentSystem\ValueObjects\ThreeDSResult;
 use RuntimeException;
 
 class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
@@ -38,6 +39,8 @@ class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
     private PaymentMethodStatusEnum $status;
 
     private Gateway\PaymentMethodsAggregate $gateway;
+
+    private ?ThreeDSResult $threeDSResult;
 
     private function __construct(AggregateRootId $aggregateRootId)
     {
@@ -79,7 +82,7 @@ class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
     public static function create(CreatePaymentMethodCommandInterface $command): static
     {
         $self = new static($command->getId());
-        $self->recordThat(new PaymentMethodCreated($command->getBillingAddress(), $command->getSource()));
+        $self->recordThat(new PaymentMethodCreated($command->getBillingAddress(), $command->getSource(), $command->getThreeDS()));
 
         return $self;
     }
@@ -93,7 +96,7 @@ class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
             new PaymentMethodCreated(
                 $command->getToken()->getBillingAddress(),
                 $command->getToken()->getSource(),
-                $command->getToken()->aggregateRootId()
+                tokenId: $command->getToken()->aggregateRootId()
             )
         );
 
@@ -135,9 +138,7 @@ class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
 
     public function use(?callable $callback = null): static
     {
-        if (!$this->isValid()) {
-            throw new PaymentMethodSuspendedException();
-        }
+        $this->isValid() || throw new PaymentMethodSuspendedException();
 
         isset($callback) && $callback($this);
 

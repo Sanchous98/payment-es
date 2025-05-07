@@ -3,11 +3,11 @@
   "type": "library",
   "license": "MIT",
   "require": {
-    "php": "^8.2",
+    "php": "^8.4",
     "eventsauce/eventsauce": "^3.6",
     "symfony/intl": "^7.2",
     "moneyphp/money": "^4.6",
-    "giggsey/libphonenumber-for-php-lite": "^8.13"
+    "giggsey/libphonenumber-for-php-lite": "^9.0"
   },
   "autoload": {
     "psr-4": {

@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace PaymentSystem\Enum;
 
-enum ECICodesEnum: string
+enum ECICodesEnum: int
 {
-    case MASTERCARD_FAILED = '00';
-    case MASTERCARD_ATTEMPTED = '01';
-    case MASTERCARD_SUCCESSFUL = '02';
-    case VISA_FAILED = '07';
-    case VISA_ATTEMPTED = '06';
-    case VISA_SUCCESSFUL = '05';
+    case MASTERCARD_FAILED = 0;
+    case MASTERCARD_ATTEMPTED = 1;
+    case MASTERCARD_SUCCESSFUL = 2;
+    case VISA_FAILED = 7;
+    case VISA_ATTEMPTED = 6;
+    case VISA_SUCCESSFUL = 5;
 }
