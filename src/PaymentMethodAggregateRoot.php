@@ -11,6 +11,7 @@ use PaymentSystem\Commands\CreatePaymentMethodCommandInterface;
 use PaymentSystem\Commands\CreateTokenPaymentMethodCommandInterface;
 use PaymentSystem\Commands\UpdatedPaymentMethodCommandInterface;
 use PaymentSystem\Contracts\SourceInterface;
+use PaymentSystem\Entities\BillingAddress;
 use PaymentSystem\Enum\PaymentMethodStatusEnum;
 use PaymentSystem\Events\PaymentMethodCreated;
 use PaymentSystem\Events\PaymentMethodFailed;
@@ -22,7 +23,6 @@ use PaymentSystem\Gateway\Events\GatewayPaymentMethodAdded;
 use PaymentSystem\Gateway\Events\GatewayPaymentMethodSuspended;
 use PaymentSystem\Gateway\Events\GatewayPaymentMethodUpdated;
 use PaymentSystem\Gateway\Resources\PaymentMethodInterface;
-use PaymentSystem\ValueObjects\BillingAddress;
 use PaymentSystem\ValueObjects\ThreeDSResult;
 use RuntimeException;
 

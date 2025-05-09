@@ -9,6 +9,7 @@ use EventSauce\EventSourcing\AggregateRootId;
 use EventSauce\EventSourcing\AggregateRootWithAggregates;
 use PaymentSystem\Commands\CreateTokenCommandInterface;
 use PaymentSystem\Contracts\TokenizedSourceInterface;
+use PaymentSystem\Entities\BillingAddress;
 use PaymentSystem\Enum\TokenStatusEnum;
 use PaymentSystem\Events\TokenCreated;
 use PaymentSystem\Events\TokenDeclined;
@@ -16,7 +17,6 @@ use PaymentSystem\Events\TokenUsed;
 use PaymentSystem\Exceptions\CardExpiredException;
 use PaymentSystem\Exceptions\TokenExpiredException;
 use PaymentSystem\Gateway\Events\GatewayTokenAdded;
-use PaymentSystem\ValueObjects\BillingAddress;
 
 class TokenAggregateRoot implements AggregateRoot, TenderInterface
 {

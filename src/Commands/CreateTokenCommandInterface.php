@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace PaymentSystem\Commands;
 
 use EventSauce\EventSourcing\AggregateRootId;
-use PaymentSystem\ValueObjects\BillingAddress;
+use PaymentSystem\Entities\BillingAddress;
 use PaymentSystem\ValueObjects\CreditCard;
 
 interface CreateTokenCommandInterface

@@ -6,7 +6,7 @@ namespace PaymentSystem\Commands;
 
 use EventSauce\EventSourcing\AggregateRootId;
 use PaymentSystem\Contracts\SourceInterface;
-use PaymentSystem\ValueObjects\BillingAddress;
+use PaymentSystem\Entities\BillingAddress;
 use PaymentSystem\ValueObjects\ThreeDSResult;
 
 interface CreatePaymentMethodCommandInterface

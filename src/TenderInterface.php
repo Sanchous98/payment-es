@@ -6,9 +6,9 @@ namespace PaymentSystem;
 
 use EventSauce\EventSourcing\AggregateRoot;
 use PaymentSystem\Contracts\SourceInterface;
+use PaymentSystem\Entities\BillingAddress;
 use PaymentSystem\Gateway\Resources\PaymentMethodInterface;
 use PaymentSystem\Gateway\Resources\TokenInterface;
-use PaymentSystem\ValueObjects\BillingAddress;
 
 interface TenderInterface extends AggregateRoot
 {

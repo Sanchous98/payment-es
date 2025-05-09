@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace PaymentSystem\Commands;
 
-use PaymentSystem\ValueObjects\BillingAddress;
+use PaymentSystem\Entities\BillingAddress;
 
 interface UpdatedPaymentMethodCommandInterface
 {

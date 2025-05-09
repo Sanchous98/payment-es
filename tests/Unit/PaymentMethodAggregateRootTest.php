@@ -5,6 +5,7 @@ use PaymentSystem\Commands\CreatePaymentMethodCommandInterface;
 use PaymentSystem\Commands\CreateTokenPaymentMethodCommandInterface;
 use PaymentSystem\Commands\UpdatedPaymentMethodCommandInterface;
 use PaymentSystem\Contracts\SourceInterface;
+use PaymentSystem\Entities\BillingAddress;
 use PaymentSystem\Enum\PaymentMethodStatusEnum;
 use PaymentSystem\Events\PaymentMethodCreated;
 use PaymentSystem\Events\PaymentMethodFailed;
@@ -19,7 +20,6 @@ use PaymentSystem\Gateway\Resources\PaymentMethodInterface;
 use PaymentSystem\PaymentMethodAggregateRoot;
 use PaymentSystem\Tests\PaymentMethods;
 use PaymentSystem\TokenAggregateRoot;
-use PaymentSystem\ValueObjects\BillingAddress;
 use PaymentSystem\ValueObjects\CreditCard;
 
 use function EventSauce\EventSourcing\PestTooling\given;

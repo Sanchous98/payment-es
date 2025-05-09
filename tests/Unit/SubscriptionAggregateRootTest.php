@@ -14,7 +14,7 @@ use PaymentSystem\PaymentIntentAggregateRoot;
 use PaymentSystem\PaymentMethodAggregateRoot;
 use PaymentSystem\SubscriptionAggregateRoot;
 use PaymentSystem\ValueObjects\GenericId;
-use PaymentSystem\ValueObjects\SubscriptionPlan;
+use PaymentSystem\Entities\SubscriptionPlan;
 use PaymentSystem\Tests\Subscriptions;
 
 use function EventSauce\EventSourcing\PestTooling\given;
@@ -30,6 +30,7 @@ it('is created successfully', function () {
     $command = $this->createStub(CreateSubscriptionCommandInterface::class);
     $command->method('getPaymentMethod')->willReturn($paymentMethod);
     $command->method('getPlan')->willReturn(new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -42,6 +43,7 @@ it('is created successfully', function () {
 
 it('is paid successfully when pending', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -61,6 +63,7 @@ it('is paid successfully when pending', function () {
 
 it('transitions from pending to active after payment', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -87,6 +90,7 @@ it('transitions from pending to active after payment', function () {
 });
 it('transitions from active to pending after period ends', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -113,6 +117,7 @@ it('transitions from active to pending after period ends', function () {
 });
 it('transitions from pending to suspended after grace period', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -139,6 +144,7 @@ it('transitions from pending to suspended after grace period', function () {
 });
 it('transitions from suspended to active after payment', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -166,6 +172,7 @@ it('transitions from suspended to active after payment', function () {
 
 it('fails to pay with unattached payment intent', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -184,6 +191,7 @@ it('fails to pay with unattached payment intent', function () {
 });
 it('fails to pay with attached payment intent to different subscription', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -202,6 +210,7 @@ it('fails to pay with attached payment intent to different subscription', functi
 });
 it('fails to pay with unsuccessful payment intent', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -221,6 +230,7 @@ it('fails to pay with unsuccessful payment intent', function () {
 });
 it('fails to pay with wrong amount', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -241,6 +251,7 @@ it('fails to pay with wrong amount', function () {
 });
 it('fails to pay with already used payment intent', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -263,6 +274,7 @@ it('fails to pay with already used payment intent', function () {
 
 it('can cancel active subscription', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -289,6 +301,7 @@ it('can cancel active subscription', function () {
 });
 it('can cancel pending subscription', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -306,6 +319,7 @@ it('can cancel pending subscription', function () {
 });
 it('can cancel suspended subscription', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -333,6 +347,7 @@ it('can cancel suspended subscription', function () {
 });
 it('cannot cancel already cancelled subscription', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -347,6 +362,7 @@ it('cannot cancel already cancelled subscription', function () {
 
 it('starts grace period on period end', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -373,6 +389,7 @@ it('starts grace period on period end', function () {
 });
 it('suspends after grace period ends', function () {
     $plan = new SubscriptionPlan(
+        new GenericId('sp-id'),
         'test',
         'test description',
         new Money(100, new Currency('USD')),
