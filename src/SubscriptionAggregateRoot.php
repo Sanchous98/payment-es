@@ -6,9 +6,10 @@ namespace PaymentSystem;
 
 use DateTimeImmutable;
 use EventSauce\EventSourcing\AggregateRoot;
+use EventSauce\EventSourcing\AggregateRootBehaviour;
 use EventSauce\EventSourcing\AggregateRootId;
-use EventSauce\EventSourcing\AggregateRootWithAggregates;
 use PaymentSystem\Commands\CreateSubscriptionCommandInterface;
+use PaymentSystem\Entities\SubscriptionPlan;
 use PaymentSystem\Enum\PaymentIntentStatusEnum;
 use PaymentSystem\Enum\SubscriptionStatusEnum;
 use PaymentSystem\Events\SubscriptionCanceled;
@@ -18,8 +19,6 @@ use PaymentSystem\Events\SubscriptionPaymentMethodUpdated;
 use PaymentSystem\Exceptions\PaymentMethodSuspendedException;
 use PaymentSystem\Exceptions\SubscriptionException;
 use PaymentSystem\ValueObjects\RecurringActionTracker;
-use PaymentSystem\ValueObjects\SubscriptionPlan;
-
 use Psr\Clock\ClockInterface;
 
 use function in_array;
@@ -27,9 +26,7 @@ use function array_map;
 
 class SubscriptionAggregateRoot implements AggregateRoot
 {
-    use AggregateRootWithAggregates {
-        __construct as __aggregateRootConstruct;
-    }
+    use AggregateRootBehaviour;
 
     public const string GRACE_PERIOD = 'P1D';
 
@@ -45,11 +42,6 @@ class SubscriptionAggregateRoot implements AggregateRoot
     private bool $canceled = false;
 
     private RecurringActionTracker $tracker;
-
-    private function __construct(AggregateRootId $aggregateRootId)
-    {
-        $this->__aggregateRootConstruct($aggregateRootId);
-    }
 
     public static function create(CreateSubscriptionCommandInterface $command): static
     {

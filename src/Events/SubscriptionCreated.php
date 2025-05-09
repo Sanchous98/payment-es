@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace PaymentSystem\Events;
 
 use EventSauce\EventSourcing\AggregateRootId;
-use PaymentSystem\ValueObjects\SubscriptionPlan;
+use PaymentSystem\Entities\SubscriptionPlan;
 
 readonly class SubscriptionCreated
 {

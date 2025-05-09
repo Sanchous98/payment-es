@@ -1,13 +1,12 @@
 <?php
 
-declare(strict_types=1);
-
-namespace PaymentSystem\ValueObjects;
+namespace PaymentSystem\Events;
 
 use DateInterval;
 use Money\Money;
+use PaymentSystem\ValueObjects\MerchantDescriptor;
 
-readonly class SubscriptionPlan
+readonly class SubscriptionPlanCreated
 {
     public function __construct(
         public string $name,

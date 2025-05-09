@@ -3,8 +3,8 @@
 namespace PaymentSystem\Commands;
 
 use EventSauce\EventSourcing\AggregateRootId;
+use PaymentSystem\Entities\SubscriptionPlan;
 use PaymentSystem\PaymentMethodAggregateRoot;
-use PaymentSystem\ValueObjects\SubscriptionPlan;
 
 interface CreateSubscriptionCommandInterface
 {

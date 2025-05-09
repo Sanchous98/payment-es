@@ -35,11 +35,7 @@ readonly class State implements JsonSerializable
         $result = [];
 
         foreach ($values as $country => $states) {
-            array_push(
-                $result,
-                ...
-                array_map(fn(string $state) => new State($state, new Country($country)), array_keys($states))
-            );
+            array_push($result, ...array_map(fn(string $state) => new State($state, new Country($country)), array_keys($states)));
         }
 
         return $result;

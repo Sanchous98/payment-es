@@ -3,7 +3,7 @@
 namespace PaymentSystem\Gateway\Resources;
 
 use PaymentSystem\Contracts\SourceInterface;
-use PaymentSystem\ValueObjects\BillingAddress;
+use PaymentSystem\Entities\BillingAddress;
 
 interface PaymentMethodInterface extends ResourceInterface
 {
