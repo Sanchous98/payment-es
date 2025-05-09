@@ -3,7 +3,7 @@
 namespace PaymentSystem\Gateway\Resources;
 
 use PaymentSystem\Contracts\TokenizedSourceInterface;
-use PaymentSystem\ValueObjects\BillingAddress;
+use PaymentSystem\Entities\BillingAddress;
 
 interface TokenInterface extends ResourceInterface
 {

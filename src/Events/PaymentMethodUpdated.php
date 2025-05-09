@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace PaymentSystem\Events;
 
-use PaymentSystem\ValueObjects\BillingAddress;
+use PaymentSystem\Entities\BillingAddress;
 
 readonly class PaymentMethodUpdated
 {
