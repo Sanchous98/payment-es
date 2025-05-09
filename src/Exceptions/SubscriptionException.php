@@ -34,4 +34,9 @@ class SubscriptionException extends \RuntimeException
     {
         return new self("Cannot cancel $status->value subscription");
     }
+
+    public static function paymentMethodMismatch(): SubscriptionException
+    {
+        return new self('Payment method mismatch');
+    }
 }

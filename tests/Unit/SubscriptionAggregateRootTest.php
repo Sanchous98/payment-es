@@ -11,6 +11,7 @@ use PaymentSystem\Events\SubscriptionCreated;
 use PaymentSystem\Events\SubscriptionPaid;
 use PaymentSystem\Exceptions\SubscriptionException;
 use PaymentSystem\PaymentIntentAggregateRoot;
+use PaymentSystem\PaymentMethodAggregateRoot;
 use PaymentSystem\SubscriptionAggregateRoot;
 use PaymentSystem\ValueObjects\GenericId;
 use PaymentSystem\ValueObjects\SubscriptionPlan;
@@ -22,8 +23,13 @@ use function EventSauce\EventSourcing\PestTooling\when;
 uses(Subscriptions::class);
 
 it('is created successfully', function () {
+    $paymentMethod = $this->createStub(PaymentMethodAggregateRoot::class);
+    $paymentMethod->method('aggregateRootId')->willReturn(new GenericId('1'));
+    $paymentMethod->method('isValid')->willReturn(true);
+
     $command = $this->createStub(CreateSubscriptionCommandInterface::class);
-    $command->method('getPlan')->willReturn($plan = new SubscriptionPlan(
+    $command->method('getPaymentMethod')->willReturn($paymentMethod);
+    $command->method('getPlan')->willReturn(new SubscriptionPlan(
         'test',
         'test description',
         new Money(100, new Currency('USD')),
@@ -31,7 +37,7 @@ it('is created successfully', function () {
     ));
 
     when(fn() => SubscriptionAggregateRoot::create($command))
-        ->then(new SubscriptionCreated($command->getPlan()));
+        ->then(new SubscriptionCreated($command->getPlan(), $command->getPaymentMethod()->aggregateRootId()));
 });
 
 it('is paid successfully when pending', function () {
@@ -42,12 +48,13 @@ it('is paid successfully when pending', function () {
         new DateInterval('P1D')
     );
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn($this->aggregateRootId());
     $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(true);
     $paymentIntent->method('getMoney')->willReturn($plan->money);
     $clock = new TestClock();
 
-    given(new SubscriptionCreated($plan))
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->pay($paymentIntent, $clock))
         ->then(new SubscriptionPaid($paymentIntent->aggregateRootId(), $clock->now()));
 });
@@ -61,13 +68,14 @@ it('transitions from pending to active after payment', function () {
     );
     
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn($this->aggregateRootId());
     $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(true);
     $paymentIntent->method('getMoney')->willReturn($plan->money);
     
     $clock = new TestClock();
 
-    given(new SubscriptionCreated($plan))
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()),)
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->pay($paymentIntent, $clock))
         ->then(
             new SubscriptionPaid($paymentIntent->aggregateRootId(), $clock->now())
@@ -86,6 +94,7 @@ it('transitions from active to pending after period ends', function () {
     );
     
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn($this->aggregateRootId());
     $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(true);
     $paymentIntent->method('getMoney')->willReturn($plan->money);
@@ -93,7 +102,7 @@ it('transitions from active to pending after period ends', function () {
     $clock = new TestClock();
     $clock->moveForward(DateInterval::createFromDateString('-1 day'));
 
-    given(new SubscriptionCreated($plan))
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->pay($paymentIntent, $clock))
         ->then(new SubscriptionPaid($paymentIntent->aggregateRootId(), $clock->now()));
 
@@ -111,6 +120,7 @@ it('transitions from pending to suspended after grace period', function () {
     );
     
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn($this->aggregateRootId());
     $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(true);
     $paymentIntent->method('getMoney')->willReturn($plan->money);
@@ -118,7 +128,7 @@ it('transitions from pending to suspended after grace period', function () {
     $clock = new TestClock();
     $clock->moveForward(DateInterval::createFromDateString('-2 day'));
     
-    given(new SubscriptionCreated($plan))
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->pay($paymentIntent, $clock))
         ->then(new SubscriptionPaid($paymentIntent->aggregateRootId(), $clock->now()));
     
@@ -136,13 +146,14 @@ it('transitions from suspended to active after payment', function () {
     );
     
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn($this->aggregateRootId());
     $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(true);
     $paymentIntent->method('getMoney')->willReturn($plan->money);
     
     $clock = new TestClock();
 
-    given(new SubscriptionCreated($plan),
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()),
         new SubscriptionPaid(new GenericId(2), $clock->now()->sub(DateInterval::createFromDateString('2 day'))))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->pay($paymentIntent, $clock))
         ->then(new SubscriptionPaid($paymentIntent->aggregateRootId(), $clock->now()));
@@ -162,11 +173,12 @@ it('fails to pay with unattached payment intent', function () {
     );
 
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn(null);
 
     $clock = new TestClock();
 
-    given(new SubscriptionCreated($plan))
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->pay($paymentIntent, $clock))
         ->expectToFail(SubscriptionException::paymentIntentNotAttached());
 });
@@ -179,11 +191,12 @@ it('fails to pay with attached payment intent to different subscription', functi
     );
     
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn(new GenericId('different-subscription-id'));
     
     $clock = new TestClock();
 
-    given(new SubscriptionCreated($plan))
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->pay($paymentIntent, $clock))
         ->expectToFail(SubscriptionException::paymentIntentNotAttachedToThis());
 });
@@ -196,12 +209,13 @@ it('fails to pay with unsuccessful payment intent', function () {
     );
     
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn($this->aggregateRootId());
     $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(false);
     
     $clock = new TestClock();
 
-    given(new SubscriptionCreated($plan))
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->pay($paymentIntent, $clock))
         ->expectToFail(SubscriptionException::paymentIntentNotSucceeded());
 });
@@ -214,13 +228,14 @@ it('fails to pay with wrong amount', function () {
     );
     
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn($this->aggregateRootId());
     $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(true);
     $paymentIntent->method('getMoney')->willReturn(new Money(200, new Currency('USD')));
     
     $clock = new TestClock();
 
-    given(new SubscriptionCreated($plan))
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->pay($paymentIntent, $clock))
         ->expectToFail(SubscriptionException::moneyMismatch());
 });
@@ -233,13 +248,14 @@ it('fails to pay with already used payment intent', function () {
     );
     
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn($this->aggregateRootId());
     $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(true);
     $paymentIntent->method('getMoney')->willReturn($plan->money);
     
     $clock = new TestClock();
 
-    given(new SubscriptionCreated($plan),
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()),
         new SubscriptionPaid($paymentIntent->aggregateRootId(), $clock->now()))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->pay($paymentIntent, $clock))
         ->expectToFail(SubscriptionException::paymentIntentAlreadyUsed());
@@ -254,16 +270,17 @@ it('can cancel active subscription', function () {
     );
     
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn($this->aggregateRootId());
     $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(true);
     $paymentIntent->method('getMoney')->willReturn($plan->money);
     
     $clock = new TestClock();
 
-    given(new SubscriptionCreated($plan),
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()),
         new SubscriptionPaid($paymentIntent->aggregateRootId(), $clock->now()))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->cancel())
-        ->then(new SubscriptionCanceled($clock->now()));
+        ->then(new SubscriptionCanceled());
 
     $subscription = $this->retrieveAggregateRoot($this->aggregateRootId());
     expect($subscription)
@@ -278,7 +295,7 @@ it('can cancel pending subscription', function () {
         new DateInterval('P1D')
     );
 
-    given(new SubscriptionCreated($plan))
+    given(new SubscriptionCreated($plan, $this->aggregateRootId()))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->cancel())
         ->then(new SubscriptionCanceled());
 
@@ -296,6 +313,7 @@ it('can cancel suspended subscription', function () {
     );
     
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn($this->aggregateRootId());
     $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(true);
     $paymentIntent->method('getMoney')->willReturn($plan->money);
@@ -303,7 +321,7 @@ it('can cancel suspended subscription', function () {
     $clock = new TestClock();
     $clock->moveForward(DateInterval::createFromDateString('-2 day'));
 
-    given(new SubscriptionCreated($plan),
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()),
         new SubscriptionPaid($paymentIntent->aggregateRootId(), $clock->now()))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->cancel())
         ->then(new SubscriptionCanceled($clock->now()));
@@ -321,7 +339,7 @@ it('cannot cancel already cancelled subscription', function () {
         new DateInterval('P1D')
     );
 
-    given(new SubscriptionCreated($plan),
+    given(new SubscriptionCreated($plan, $this->aggregateRootId()),
         new SubscriptionCanceled())
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->cancel())
         ->expectToFail(SubscriptionException::cannotCancel(SubscriptionStatusEnum::CANCELLED));;
@@ -336,6 +354,7 @@ it('starts grace period on period end', function () {
     );
     
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn($this->aggregateRootId());
     $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(true);
     $paymentIntent->method('getMoney')->willReturn($plan->money);
@@ -343,7 +362,7 @@ it('starts grace period on period end', function () {
     $clock = new TestClock();
     $clock->moveForward(DateInterval::createFromDateString('-1 day'));
 
-    given(new SubscriptionCreated($plan))
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->pay($paymentIntent, $clock))
         ->then(new SubscriptionPaid($paymentIntent->aggregateRootId(), $clock->now()));
 
@@ -361,6 +380,7 @@ it('suspends after grace period ends', function () {
     );
     
     $paymentIntent = $this->createStub(PaymentIntentAggregateRoot::class);
+    $paymentIntent->method('getTenderId')->willReturn(new GenericId('2'));
     $paymentIntent->method('getSubscriptionId')->willReturn($this->aggregateRootId());
     $paymentIntent->method('is')->with(PaymentIntentStatusEnum::SUCCEEDED)->willReturn(true);
     $paymentIntent->method('getMoney')->willReturn($plan->money);
@@ -368,7 +388,7 @@ it('suspends after grace period ends', function () {
     $clock = new TestClock();
     $clock->moveForward(DateInterval::createFromDateString('-2 day'));
 
-    given(new SubscriptionCreated($plan))
+    given(new SubscriptionCreated($plan, $paymentIntent->getTenderId()))
         ->when(fn(SubscriptionAggregateRoot $subscription) => $subscription->pay($paymentIntent, $clock))
         ->then(new SubscriptionPaid($paymentIntent->aggregateRootId(), $clock->now()));
 
