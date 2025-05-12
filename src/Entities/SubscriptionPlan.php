@@ -10,22 +10,12 @@ use PaymentSystem\ValueObjects\MerchantDescriptor;
 class SubscriptionPlan
 {
     public function __construct(
-        private readonly AggregateRootId $id,
-        public string $name {
-            get => $this->name;
-        },
-        public string $description {
-            get => $this->description;
-        },
-        public Money $money {
-            get => $this->money;
-        },
-        public DateInterval $interval {
-            get => $this->interval;
-        },
-        public MerchantDescriptor $merchantDescriptor = new MerchantDescriptor() {
-            get => $this->merchantDescriptor;
-        },
+        public readonly AggregateRootId $id,
+        private(set) string $name,
+        private(set) string $description,
+        private(set) Money $money,
+        private(set) DateInterval $interval,
+        private(set) MerchantDescriptor $merchantDescriptor = new MerchantDescriptor(),
     ) {
     }
 
@@ -41,10 +31,5 @@ class SubscriptionPlan
         $this->money = $money ?? $this->money;
         $this->interval = $interval ?? $this->interval;
         $this->merchantDescriptor = $merchantDescriptor ?? $this->merchantDescriptor;
-    }
-
-    public function getId(): AggregateRootId
-    {
-        return $this->id;
     }
 }

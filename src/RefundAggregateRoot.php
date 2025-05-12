@@ -16,7 +16,6 @@ use PaymentSystem\Events\RefundCreated;
 use PaymentSystem\Events\RefundDeclined;
 use PaymentSystem\Exceptions\InvalidAmountException;
 use PaymentSystem\Exceptions\RefundException;
-use PaymentSystem\Exceptions\RefundUnavailableException;
 use PaymentSystem\Gateway\Events\GatewayRefundCreated;
 
 class RefundAggregateRoot implements AggregateRoot
@@ -46,7 +45,7 @@ class RefundAggregateRoot implements AggregateRoot
     {
         $command->getMoney()->isZero() && throw InvalidAmountException::notZero();
         $command->getMoney()->isNegative() && throw InvalidAmountException::notNegative();
-        $command->getPaymentIntent()->is(PaymentIntentStatusEnum::SUCCEEDED) || throw RefundUnavailableException::unsupportedIntentStatus($command->getPaymentIntent()->getStatus());
+        $command->getPaymentIntent()->is(PaymentIntentStatusEnum::SUCCEEDED) || throw RefundException::unsupportedIntentStatus($command->getPaymentIntent()->getStatus());
         $command->getPaymentIntent()->getMoney()->lessThan($command->getMoney()) && throw InvalidAmountException::notGreaterThanCaptured($command->getMoney()->getAmount());
 
         $self = new static($command->getId());

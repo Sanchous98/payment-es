@@ -17,8 +17,8 @@ use PaymentSystem\Events\PaymentMethodCreated;
 use PaymentSystem\Events\PaymentMethodFailed;
 use PaymentSystem\Events\PaymentMethodSuspended;
 use PaymentSystem\Events\PaymentMethodUpdated;
-use PaymentSystem\Exceptions\PaymentMethodSuspendedException;
-use PaymentSystem\Exceptions\TokenExpiredException;
+use PaymentSystem\Exceptions\PaymentMethodException;
+use PaymentSystem\Exceptions\TokenException;
 use PaymentSystem\Gateway\Events\GatewayPaymentMethodAdded;
 use PaymentSystem\Gateway\Events\GatewayPaymentMethodSuspended;
 use PaymentSystem\Gateway\Events\GatewayPaymentMethodUpdated;
@@ -89,7 +89,7 @@ class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
 
     public static function createFromToken(CreateTokenPaymentMethodCommandInterface $command): static
     {
-        !$command->getToken()->isValid() && throw new TokenExpiredException();
+        !$command->getToken()->isValid() && throw TokenException::suspended();
 
         $self = new static($command->getId());
         $self->recordThat(
@@ -106,7 +106,7 @@ class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
     public function update(UpdatedPaymentMethodCommandInterface $command): static
     {
         if ($this->status === PaymentMethodStatusEnum::FAILED || $this->status === PaymentMethodStatusEnum::SUSPENDED) {
-            throw new PaymentMethodSuspendedException();
+            throw PaymentMethodException::suspended();
         }
 
         $this->recordThat(new PaymentMethodUpdated($command->getBillingAddress()));
@@ -128,7 +128,7 @@ class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
     public function suspend(): static
     {
         if ($this->status !== PaymentMethodStatusEnum::SUCCEEDED) {
-            throw new PaymentMethodSuspendedException();
+            throw PaymentMethodException::suspended();
         }
 
         $this->recordThat(new PaymentMethodSuspended());
@@ -138,7 +138,7 @@ class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
 
     public function use(?callable $callback = null): static
     {
-        $this->isValid() || throw new PaymentMethodSuspendedException();
+        $this->isValid() || throw PaymentMethodException::suspended();
 
         isset($callback) && $callback($this);
 

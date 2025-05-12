@@ -15,10 +15,8 @@ use PaymentSystem\Events\PaymentIntentAuthorized;
 use PaymentSystem\Events\PaymentIntentCanceled;
 use PaymentSystem\Events\PaymentIntentCaptured;
 use PaymentSystem\Events\PaymentIntentDeclined;
-use PaymentSystem\Exceptions\CancelUnavailableException;
-use PaymentSystem\Exceptions\CaptureUnavailableException;
-use PaymentSystem\Exceptions\DeclineUnavailableException;
 use PaymentSystem\Exceptions\InvalidAmountException;
+use PaymentSystem\Exceptions\PaymentIntentException;
 use PaymentSystem\Gateway\Events\GatewayPaymentIntentAuthorized;
 use PaymentSystem\Gateway\Events\GatewayPaymentIntentCaptured;
 use PaymentSystem\ValueObjects\MerchantDescriptor;
@@ -142,7 +140,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
     public function capture(CapturePaymentCommandInterface $command): static
     {
         if (!in_array($this->status, self::CAPTURABLE_STATUSES, true)) {
-            throw CaptureUnavailableException::unsupportedIntentStatus($this->status);
+            throw PaymentIntentException::unsupportedIntentCaptureStatus($this->status);
         }
 
         $money = new Money($command->getAmount() ?? $this->money->getAmount(), $this->money->getCurrency());
@@ -155,7 +153,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         }
 
         if ($this->status === PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD) {
-            $command->getTender() !== null || throw CaptureUnavailableException::paymentMethodIsRequired();
+            $command->getTender() !== null || throw PaymentIntentException::paymentMethodIsRequired();
             $command->getTender()->use();
         }
 
@@ -170,7 +168,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
     public function cancel(): static
     {
         if (!in_array($this->status, self::CAPTURABLE_STATUSES, true)) {
-            throw CancelUnavailableException::unsupportedIntentStatus($this->status);
+            throw PaymentIntentException::unsupportedIntentCancelStatus($this->status);
         }
 
         $this->recordThat(new PaymentIntentCanceled());
@@ -181,7 +179,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
     public function decline(string $reason): static
     {
         if (!in_array($this->status, self::CAPTURABLE_STATUSES, true)) {
-            throw DeclineUnavailableException::unsupportedIntentStatus($this->status);
+            throw PaymentIntentException::unsupportedIntentDeclineStatus($this->status);
         }
 
         $this->recordThat(new PaymentIntentDeclined($reason));
@@ -211,7 +209,8 @@ class PaymentIntentAggregateRoot implements AggregateRoot
             $event->merchantDescriptor,
             $event->description,
             $event->threeDSResult,
-            $event->tenderId
+            $event->tenderId,
+            $event->subscriptionId,
         );
         $this->gateway = new Gateway\PaymentIntentAggregate($this->eventRecorder());
         $this->registerAggregate($this->gateway);
@@ -253,7 +252,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         $this->onCanceled();
     }
 
-    private function onAuthorized(Money $money, MerchantDescriptor $merchantDescriptor, string $description, ?ThreeDSResult $threeDS = null, ?AggregateRootId $paymentMethodId = null): void
+    private function onAuthorized(Money $money, MerchantDescriptor $merchantDescriptor, string $description, ?ThreeDSResult $threeDS = null, ?AggregateRootId $paymentMethodId = null, ?AggregateRootId $subscriptionId = null): void
     {
         $this->money = $money;
         $this->merchantDescriptor = $merchantDescriptor;
@@ -262,6 +261,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         if (isset($paymentMethodId)) {
             $this->tenderId = $paymentMethodId;
         }
+        $this->subscriptionId = $subscriptionId;
         $this->status = isset($this->tenderId) ? PaymentIntentStatusEnum::REQUIRES_CAPTURE : PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD;
     }
 

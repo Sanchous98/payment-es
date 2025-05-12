@@ -17,12 +17,7 @@ class BillingAddressAggregationRoot implements AggregateRoot
 {
     use AggregateRootBehaviour;
 
-    private BillingAddress $address;
-
-    public function getBillingAddress(): BillingAddress
-    {
-        return $this->address;
-    }
+    public readonly BillingAddress $address;
 
     public static function create(CreateBillingAddressCommandInterface $command): static
     {

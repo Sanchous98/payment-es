@@ -14,8 +14,8 @@ use PaymentSystem\Enum\TokenStatusEnum;
 use PaymentSystem\Events\TokenCreated;
 use PaymentSystem\Events\TokenDeclined;
 use PaymentSystem\Events\TokenUsed;
-use PaymentSystem\Exceptions\CardExpiredException;
-use PaymentSystem\Exceptions\TokenExpiredException;
+use PaymentSystem\Exceptions\CardException;
+use PaymentSystem\Exceptions\TokenException;
 use PaymentSystem\Gateway\Events\GatewayTokenAdded;
 
 class TokenAggregateRoot implements AggregateRoot, TenderInterface
@@ -43,7 +43,7 @@ class TokenAggregateRoot implements AggregateRoot, TenderInterface
 
     public static function create(CreateTokenCommandInterface $command): static
     {
-        $command->getCard()->expired() && throw new CardExpiredException();
+        $command->getCard()->expired() && throw CardException::expired();
 
         $self = new static($command->getId());
         $self->recordThat(new TokenCreated($command->getCard(), $command->getBillingAddress()));
@@ -93,7 +93,7 @@ class TokenAggregateRoot implements AggregateRoot, TenderInterface
 
     public function decline(string $reason): static
     {
-        $this->isValid() || throw new TokenExpiredException();
+        $this->isValid() || throw TokenException::suspended();
 
         $this->recordThat(new TokenDeclined($reason));
 
@@ -102,7 +102,7 @@ class TokenAggregateRoot implements AggregateRoot, TenderInterface
 
     public function use(?callable $callback = null): static
     {
-        $this->isValid() || throw new TokenExpiredException();
+        $this->isValid() || throw TokenException::suspended();
 
         isset($callback) && $callback($this);
         $this->recordThat(new TokenUsed());

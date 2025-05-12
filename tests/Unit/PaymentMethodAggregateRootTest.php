@@ -11,8 +11,8 @@ use PaymentSystem\Events\PaymentMethodCreated;
 use PaymentSystem\Events\PaymentMethodFailed;
 use PaymentSystem\Events\PaymentMethodSuspended;
 use PaymentSystem\Events\PaymentMethodUpdated;
-use PaymentSystem\Exceptions\PaymentMethodSuspendedException;
-use PaymentSystem\Exceptions\TokenExpiredException;
+use PaymentSystem\Exceptions\PaymentMethodException;
+use PaymentSystem\Exceptions\TokenException;
 use PaymentSystem\Gateway\Events\GatewayPaymentMethodAdded;
 use PaymentSystem\Gateway\Events\GatewayPaymentMethodSuspended;
 use PaymentSystem\Gateway\Events\GatewayPaymentMethodUpdated;
@@ -63,7 +63,7 @@ describe('domain-first flow', function () {
         $command->method('getToken')->willReturn($token);
 
         when(fn() => PaymentMethodAggregateRoot::createFromToken($command))
-            ->expectToFail(new TokenExpiredException());
+            ->expectToFail(TokenException::suspended());
     });
     it('payment method created successfully from source', function () {
         $card = new CreditCard(
@@ -150,7 +150,7 @@ describe('domain-first flow', function () {
             new PaymentMethodSuspended()
         )
             ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->use())
-            ->expectToFail(new PaymentMethodSuspendedException());
+            ->expectToFail(PaymentMethodException::suspended());
     });
     it('cannot be used if creation failed', function () {
         given(
@@ -158,14 +158,14 @@ describe('domain-first flow', function () {
             new PaymentMethodFailed()
         )
             ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->use())
-            ->expectToFail(new PaymentMethodSuspendedException());
+            ->expectToFail(PaymentMethodException::suspended());
     });
     it('cannot be used while it\'s peniding for creation', function () {
         given(
             new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
         )
             ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->use())
-            ->expectToFail(new PaymentMethodSuspendedException());
+            ->expectToFail(PaymentMethodException::suspended());
     });
     it('cannot fail when succeeded', function () {
         $gateway = $this->createStub(PaymentMethodInterface::class);
@@ -182,7 +182,7 @@ describe('domain-first flow', function () {
             new PaymentMethodCreated($this->createStub(BillingAddress::class), $this->createStub(SourceInterface::class)),
         )
             ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->suspend())
-            ->expectToFail(new PaymentMethodSuspendedException());
+            ->expectToFail(PaymentMethodException::suspended());
     });
     it('cannot suspend failed', function () {
         given(
@@ -190,7 +190,7 @@ describe('domain-first flow', function () {
             new PaymentMethodFailed(),
         )
             ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->suspend())
-            ->expectToFail(new PaymentMethodSuspendedException());
+            ->expectToFail(PaymentMethodException::suspended());
     });
     it('can update payment method while pending', function () {
         $command = $this->createStub(UpdatedPaymentMethodCommandInterface::class);
@@ -233,7 +233,7 @@ describe('domain-first flow', function () {
             new PaymentMethodFailed(),
         )
             ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->update($command))
-            ->expectToFail(new PaymentMethodSuspendedException());
+            ->expectToFail(PaymentMethodException::suspended());
     });
     it('cannot updated suspended', function () {
         $command = $this->createStub(UpdatedPaymentMethodCommandInterface::class);
@@ -242,7 +242,7 @@ describe('domain-first flow', function () {
             new PaymentMethodSuspended(),
         )
             ->when(fn(PaymentMethodAggregateRoot $paymentMethod) => $paymentMethod->update($command))
-            ->expectToFail(new PaymentMethodSuspendedException());
+            ->expectToFail(PaymentMethodException::suspended());
     });
 });
 

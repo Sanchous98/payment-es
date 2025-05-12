@@ -13,43 +13,18 @@ use PaymentSystem\ValueObjects\State;
 class BillingAddress
 {
     public function __construct(
-        private readonly AggregateRootId $id,
-        public string $firstName {
-            get => $this->firstName;
-        },
-        public string $lastName {
-            get => $this->lastName;
-        },
-        public string $city {
-            get => $this->city;
-        },
-        public Country $country {
-            get => $this->country;
-        },
-        public string $postalCode {
-            get => $this->postalCode;
-        },
-        public Email $email {
-            get => $this->email;
-        },
-        public PhoneNumber $phone {
-            get => $this->phone;
-        },
-        public string $addressLine {
-            get => $this->addressLine;
-        },
-        public string $addressLineExtra = '' {
-            get => $this->addressLineExtra;
-        },
-        public ?State $state = null {
-            get => $this->state;
-        },
+        public readonly AggregateRootId $id,
+        private(set) string $firstName,
+        private(set) string $lastName,
+        private(set) string $city,
+        private(set) Country $country,
+        private(set) string $postalCode,
+        private(set) Email $email,
+        private(set) PhoneNumber $phone,
+        private(set) string $addressLine,
+        private(set) string $addressLineExtra = '',
+        private(set) ?State $state = null,
     ) {
-    }
-
-    public function getId(): AggregateRootId
-    {
-        return $this->id;
     }
 
     public function update(

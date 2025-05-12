@@ -4,8 +4,8 @@ use PaymentSystem\Commands\CreateTokenCommandInterface;
 use PaymentSystem\Events\TokenCreated;
 use PaymentSystem\Events\TokenDeclined;
 use PaymentSystem\Events\TokenUsed;
-use PaymentSystem\Exceptions\CardExpiredException;
-use PaymentSystem\Exceptions\TokenExpiredException;
+use PaymentSystem\Exceptions\CardException;
+use PaymentSystem\Exceptions\TokenException;
 use PaymentSystem\Gateway\Events\GatewayTokenAdded;
 use PaymentSystem\Gateway\Resources\TokenInterface;
 use PaymentSystem\Tests;
@@ -55,7 +55,7 @@ describe('domain-first flow', function () {
         );
 
         when(fn() => TokenAggregateRoot::create($command))
-            ->expectToFail(new CardExpiredException());
+            ->expectToFail(CardException::expired());
     });
 
     it('can be used once', function () {
@@ -86,7 +86,7 @@ describe('domain-first flow', function () {
             new TokenUsed()
         )
             ->when(fn(TokenAggregateRoot $token) => $token->use())
-            ->expectToFail(new TokenExpiredException());
+            ->expectToFail(TokenException::suspended());
     });
 
     it('cannot be used until accepted by gateway', function () {
@@ -97,7 +97,7 @@ describe('domain-first flow', function () {
             new CreditCard\Cvc(),
         )))
             ->when(fn() => $this->retrieveAggregateRoot($this->newAggregateRootId())->use())
-            ->expectToFail(new TokenExpiredException());
+            ->expectToFail(TokenException::suspended());
     });
 
     it('can be declined', function () {
@@ -123,7 +123,7 @@ describe('domain-first flow', function () {
             new CreditCard\Cvc(),
         )), new GatewayTokenAdded($this->createStub(TokenInterface::class)), new TokenUsed())
             ->when(fn() => $this->retrieveAggregateRoot($this->newAggregateRootId())->decline('test reason'))
-            ->expectToFail(new TokenExpiredException());
+            ->expectToFail(TokenException::suspended());
     });
 });
 

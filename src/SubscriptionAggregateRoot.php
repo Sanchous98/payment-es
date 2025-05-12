@@ -16,7 +16,7 @@ use PaymentSystem\Events\SubscriptionCanceled;
 use PaymentSystem\Events\SubscriptionCreated;
 use PaymentSystem\Events\SubscriptionPaid;
 use PaymentSystem\Events\SubscriptionPaymentMethodUpdated;
-use PaymentSystem\Exceptions\PaymentMethodSuspendedException;
+use PaymentSystem\Exceptions\PaymentMethodException;
 use PaymentSystem\Exceptions\SubscriptionException;
 use PaymentSystem\ValueObjects\RecurringActionTracker;
 use Psr\Clock\ClockInterface;
@@ -45,7 +45,7 @@ class SubscriptionAggregateRoot implements AggregateRoot
 
     public static function create(CreateSubscriptionCommandInterface $command): static
     {
-        $command->getPaymentMethod()->isValid() || throw new PaymentMethodSuspendedException();
+        $command->getPaymentMethod()->isValid() || throw PaymentMethodException::suspended();
 
         $self = new self($command->getId());
         $self->recordThat(new SubscriptionCreated($command->getPlan(), $command->getPaymentMethod()->aggregateRootId()));
@@ -69,7 +69,7 @@ class SubscriptionAggregateRoot implements AggregateRoot
 
     public function updatePaymentMethod(PaymentMethodAggregateRoot $paymentMethod): static
     {
-        $paymentMethod->isValid() || throw new PaymentMethodSuspendedException();
+        $paymentMethod->isValid() || throw PaymentMethodException::suspended();
         $this->recordThat(new SubscriptionPaymentMethodUpdated($paymentMethod->aggregateRootId()));
 
         return $this;
@@ -115,7 +115,7 @@ class SubscriptionAggregateRoot implements AggregateRoot
     {
         $this->plan = $event->plan;
         $this->paymentMethodId = $event->paymentMethodId;
-        $this->tracker = new RecurringActionTracker($this->plan->interval);
+        $this->tracker = new RecurringActionTracker($this->plan->interval, new DateTimeImmutable()->setTime(0, 0));
     }
 
     protected function applySubscriptionPaid(SubscriptionPaid $event): void

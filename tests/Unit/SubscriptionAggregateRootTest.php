@@ -28,6 +28,7 @@ it('is created successfully', function () {
     $paymentMethod->method('isValid')->willReturn(true);
 
     $command = $this->createStub(CreateSubscriptionCommandInterface::class);
+    $command->method('getId')->willReturn($this->aggregateRootId());
     $command->method('getPaymentMethod')->willReturn($paymentMethod);
     $command->method('getPlan')->willReturn(new SubscriptionPlan(
         new GenericId('sp-id'),
@@ -39,6 +40,9 @@ it('is created successfully', function () {
 
     when(fn() => SubscriptionAggregateRoot::create($command))
         ->then(new SubscriptionCreated($command->getPlan(), $command->getPaymentMethod()->aggregateRootId()));
+
+    expect($this->retrieveAggregateRoot($this->aggregateRootId()))
+        ->getStatus()->toBe(SubscriptionStatusEnum::PENDING);
 });
 
 it('is paid successfully when pending', function () {

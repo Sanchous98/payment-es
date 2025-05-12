@@ -16,12 +16,10 @@ use PaymentSystem\Events\PaymentMethodCreated;
 use PaymentSystem\Events\PaymentMethodFailed;
 use PaymentSystem\Events\TokenCreated;
 use PaymentSystem\Events\TokenUsed;
-use PaymentSystem\Exceptions\CancelUnavailableException;
-use PaymentSystem\Exceptions\CaptureUnavailableException;
-use PaymentSystem\Exceptions\DeclineUnavailableException;
 use PaymentSystem\Exceptions\InvalidAmountException;
-use PaymentSystem\Exceptions\PaymentMethodSuspendedException;
-use PaymentSystem\Exceptions\TokenExpiredException;
+use PaymentSystem\Exceptions\PaymentIntentException;
+use PaymentSystem\Exceptions\PaymentMethodException;
+use PaymentSystem\Exceptions\TokenException;
 use PaymentSystem\Gateway\Events\GatewayPaymentIntentAuthorized;
 use PaymentSystem\Gateway\Events\GatewayPaymentIntentCanceled;
 use PaymentSystem\Gateway\Events\GatewayPaymentIntentCaptured;
@@ -158,7 +156,7 @@ describe('domain-first flow', function () {
         $command->method('getTender')->willReturn($paymentMethod);
 
         when(fn() => PaymentIntentAggregateRoot::authorize($command))
-            ->expectToFail(new PaymentMethodSuspendedException());
+            ->expectToFail(PaymentMethodException::suspended());
     });
     it('cannot authorize not valid token', function () {
         $command = $this->createStub(AuthorizePaymentCommandInterface::class);
@@ -170,7 +168,7 @@ describe('domain-first flow', function () {
         $command->method('getTender')->willReturn($token);
 
         when(fn() => PaymentIntentAggregateRoot::authorize($command))
-            ->expectToFail(new TokenExpiredException());
+            ->expectToFail(TokenException::suspended());
     });
 
     it('payment captured successfully', function () {
@@ -252,7 +250,7 @@ describe('domain-first flow', function () {
 
         given(new PaymentIntentAuthorized(new Money(100, new Currency('USD'))))
             ->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($command))
-            ->expectToFail(CaptureUnavailableException::paymentMethodIsRequired());
+            ->expectToFail(PaymentIntentException::paymentMethodIsRequired());
     });
     it('cannot capture captured payment', function () {
         given(
@@ -260,7 +258,7 @@ describe('domain-first flow', function () {
             new PaymentIntentCaptured(tenderId: $this->createStub(AggregateRootId::class)),
         )
             ->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($this->createStub(CapturePaymentCommandInterface::class)))
-            ->expectToFail(CaptureUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::SUCCEEDED));
+            ->expectToFail(PaymentIntentException::unsupportedIntentCaptureStatus(PaymentIntentStatusEnum::SUCCEEDED));
     });
     it('cannot capture declined payment', function () {
         given(
@@ -268,7 +266,7 @@ describe('domain-first flow', function () {
             new PaymentIntentDeclined('test reason'),
         )
             ->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($this->createStub(CapturePaymentCommandInterface::class)))
-            ->expectToFail(CaptureUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::DECLINED));
+            ->expectToFail(PaymentIntentException::unsupportedIntentCaptureStatus(PaymentIntentStatusEnum::DECLINED));
     });
     it('cannot capture canceled payment', function () {
         given(
@@ -276,7 +274,7 @@ describe('domain-first flow', function () {
             new PaymentIntentCanceled(),
         )
             ->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->capture($this->createStub(CapturePaymentCommandInterface::class)))
-            ->expectToFail(CaptureUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::CANCELED));
+            ->expectToFail(PaymentIntentException::unsupportedIntentCaptureStatus(PaymentIntentStatusEnum::CANCELED));
     });
 
     it('payment canceled successfully', function () {
@@ -298,7 +296,7 @@ describe('domain-first flow', function () {
             ),
             new PaymentIntentCaptured(),
         )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->cancel())
-            ->expectToFail(CancelUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::SUCCEEDED));
+            ->expectToFail(PaymentIntentException::unsupportedIntentCancelStatus(PaymentIntentStatusEnum::SUCCEEDED));
     });
     it('cannot cancel canceled payment', function () {
         given(
@@ -308,7 +306,7 @@ describe('domain-first flow', function () {
             ),
             new PaymentIntentCanceled(),
         )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->cancel())
-            ->expectToFail(CancelUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::CANCELED));
+            ->expectToFail(PaymentIntentException::unsupportedIntentCancelStatus(PaymentIntentStatusEnum::CANCELED));
     });
     it('cannot cancel declined payment', function () {
         given(
@@ -319,7 +317,7 @@ describe('domain-first flow', function () {
             new PaymentIntentCaptured(),
             new PaymentIntentDeclined('test reason'),
         )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->cancel())
-            ->expectToFail(CancelUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::DECLINED));
+            ->expectToFail(PaymentIntentException::unsupportedIntentCancelStatus(PaymentIntentStatusEnum::DECLINED));
     });
 
     it('payment declined successfully', function () {
@@ -344,7 +342,7 @@ describe('domain-first flow', function () {
             ),
             new PaymentIntentCanceled(),
         )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->decline('test reason'))
-            ->expectToFail(DeclineUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::CANCELED));
+            ->expectToFail(PaymentIntentException::unsupportedIntentDeclineStatus(PaymentIntentStatusEnum::CANCELED));
     });
     it('cannot decline declined payment', function () {
         given(
@@ -355,7 +353,7 @@ describe('domain-first flow', function () {
             new PaymentIntentCaptured(),
             new PaymentIntentDeclined('test reason'),
         )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->decline('test reason 2'))
-            ->expectToFail(DeclineUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::DECLINED));
+            ->expectToFail(PaymentIntentException::unsupportedIntentDeclineStatus(PaymentIntentStatusEnum::DECLINED));
     });
     it('cannot decline captured payment', function () {
         given(
@@ -365,7 +363,7 @@ describe('domain-first flow', function () {
             ),
             new PaymentIntentCaptured()
         )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->decline('test reason'))
-            ->expectToFail(DeclineUnavailableException::unsupportedIntentStatus(PaymentIntentStatusEnum::SUCCEEDED));
+            ->expectToFail(PaymentIntentException::unsupportedIntentDeclineStatus(PaymentIntentStatusEnum::SUCCEEDED));
     });
 });
 

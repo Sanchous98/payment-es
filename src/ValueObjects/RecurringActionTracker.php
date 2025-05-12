@@ -16,7 +16,7 @@ class RecurringActionTracker
     public function __construct(
         private readonly DateInterval $interval,
         DateTimeImmutable $start = new DateTimeImmutable(),
-        private DateTimeImmutable $prev = new DateTimeImmutable(),
+        private ?DateTimeImmutable $prev = null,
     ) {
         $this->start = $start->setTime(0, 0);
     }
@@ -41,6 +41,6 @@ class RecurringActionTracker
 
     public function getEndDate(): DateTimeImmutable
     {
-        return $this->prev->add($this->interval);
+        return $this->prev === null ? $this->start : $this->prev->add($this->interval);
     }
 }
