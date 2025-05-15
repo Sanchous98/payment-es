@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace PaymentSystem;
 
 use EventSauce\EventSourcing\AggregateRoot;
+use EventSauce\EventSourcing\AggregateRootBehaviour;
 use EventSauce\EventSourcing\AggregateRootId;
-use EventSauce\EventSourcing\AggregateRootWithAggregates;
 use Money\Money;
 use PaymentSystem\Commands\CreateRefundCommandInterface;
 use PaymentSystem\Enum\PaymentIntentStatusEnum;
@@ -16,13 +16,10 @@ use PaymentSystem\Events\RefundCreated;
 use PaymentSystem\Events\RefundDeclined;
 use PaymentSystem\Exceptions\InvalidAmountException;
 use PaymentSystem\Exceptions\RefundException;
-use PaymentSystem\Gateway\Events\GatewayRefundCreated;
 
 class RefundAggregateRoot implements AggregateRoot
 {
-    use AggregateRootWithAggregates {
-        __construct as private __aggregateRootConstruct;
-    }
+    use AggregateRootBehaviour;
 
     private AggregateRootId $paymentIntentId;
 
@@ -31,15 +28,6 @@ class RefundAggregateRoot implements AggregateRoot
     private RefundStatusEnum $status;
 
     private ?string $declineReason = null;
-
-    private Gateway\RefundAggregate $gateway;
-
-    private function __construct(AggregateRootId $id)
-    {
-        $this->__aggregateRootConstruct($id);
-        $this->gateway = new Gateway\RefundAggregate($this->eventRecorder());
-        $this->registerAggregate($this->gateway);
-    }
 
     public static function create(CreateRefundCommandInterface $command): self
     {
@@ -74,11 +62,6 @@ class RefundAggregateRoot implements AggregateRoot
         return $this->declineReason;
     }
 
-    public function getGatewayRefund(): Gateway\RefundAggregate
-    {
-        return $this->gateway;
-    }
-
     public function decline(string $reason): static
     {
         if ($this->status !== RefundStatusEnum::CREATED && $this->status !== RefundStatusEnum::REQUIRES_ACTION) {
@@ -101,27 +84,11 @@ class RefundAggregateRoot implements AggregateRoot
         return $this;
     }
 
-    public function __sleep()
-    {
-        unset($this->eventRecorder);
-        return array_keys((array)$this);
-    }
-
-    public function __wakeup(): void
-    {
-        foreach ($this->aggregatesInsideRoot as $aggregate) {
-            $aggregate->__construct($this->eventRecorder());
-        }
-    }
-
     protected function applyRefundCreated(RefundCreated $event): void
     {
         $this->money = $event->money;
         $this->status = RefundStatusEnum::CREATED;
         $this->paymentIntentId = $event->paymentIntentId;
-
-        $this->gateway = new Gateway\RefundAggregate($this->eventRecorder());
-        $this->registerAggregate($this->gateway);
     }
 
     protected function applyRefundCanceled(): void
@@ -133,17 +100,5 @@ class RefundAggregateRoot implements AggregateRoot
     {
         $this->status = RefundStatusEnum::DECLINED;
         $this->declineReason = $event->reason;
-    }
-
-    protected function applyGatewayRefundCreated(GatewayRefundCreated $event): void
-    {
-        $this->money = $event->refund->getMoney();
-        $this->paymentIntentId = $event->refund->getPaymentIntentId();
-        $this->status = RefundStatusEnum::SUCCEEDED;
-    }
-
-    protected function applyGatewayRefundCanceled(): void
-    {
-        $this->status = RefundStatusEnum::CANCELED;
     }
 }

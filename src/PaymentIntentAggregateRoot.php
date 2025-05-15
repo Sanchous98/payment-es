@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace PaymentSystem;
 
 use EventSauce\EventSourcing\AggregateRoot;
+use EventSauce\EventSourcing\AggregateRootBehaviour;
 use EventSauce\EventSourcing\AggregateRootId;
-use EventSauce\EventSourcing\AggregateRootWithAggregates;
 use Money\Money;
 use PaymentSystem\Commands\AuthorizePaymentCommandInterface;
 use PaymentSystem\Commands\CapturePaymentCommandInterface;
@@ -17,16 +17,12 @@ use PaymentSystem\Events\PaymentIntentCaptured;
 use PaymentSystem\Events\PaymentIntentDeclined;
 use PaymentSystem\Exceptions\InvalidAmountException;
 use PaymentSystem\Exceptions\PaymentIntentException;
-use PaymentSystem\Gateway\Events\GatewayPaymentIntentAuthorized;
-use PaymentSystem\Gateway\Events\GatewayPaymentIntentCaptured;
 use PaymentSystem\ValueObjects\MerchantDescriptor;
 use PaymentSystem\ValueObjects\ThreeDSResult;
 
 class PaymentIntentAggregateRoot implements AggregateRoot
 {
-    use AggregateRootWithAggregates {
-        __construct as __aggregateRootConstruct;
-    }
+    use AggregateRootBehaviour;
 
     private const CAPTURABLE_STATUSES = [
         PaymentIntentStatusEnum::REQUIRES_CAPTURE,
@@ -49,16 +45,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
 
     private Money $authCaptureDiff;
 
-    private Gateway\PaymentIntentAggregate $gateway;
-
     private ?AggregateRootId $subscriptionId = null;
-
-    private function __construct(AggregateRootId $aggregateRootId)
-    {
-        $this->__aggregateRootConstruct($aggregateRootId);
-        $this->gateway = new Gateway\PaymentIntentAggregate($this->eventRecorder());
-        $this->registerAggregate($this->gateway);
-    }
 
     public function getTenderId(): ?AggregateRootId
     {
@@ -108,11 +95,6 @@ class PaymentIntentAggregateRoot implements AggregateRoot
     public function getAuthAndCaptureDifference(): Money
     {
         return $this->authCaptureDiff;
-    }
-
-    public function getGatewayPaymentIntent(): Gateway\PaymentIntentAggregate
-    {
-        return $this->gateway;
     }
 
     public static function authorize(AuthorizePaymentCommandInterface $command): static
@@ -187,19 +169,6 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         return $this;
     }
 
-    public function __sleep()
-    {
-        unset($this->eventRecorder);
-        return array_keys((array)$this);
-    }
-
-    public function __wakeup(): void
-    {
-        foreach ($this->aggregatesInsideRoot as $aggregate) {
-            $aggregate->__construct($this->eventRecorder());
-        }
-    }
-
     // Event Listeners
 
     protected function applyPaymentIntentAuthorized(PaymentIntentAuthorized $event): void
@@ -212,8 +181,6 @@ class PaymentIntentAggregateRoot implements AggregateRoot
             $event->tenderId,
             $event->subscriptionId,
         );
-        $this->gateway = new Gateway\PaymentIntentAggregate($this->eventRecorder());
-        $this->registerAggregate($this->gateway);
     }
 
     protected function applyPaymentIntentCaptured(PaymentIntentCaptured $event): void
@@ -229,27 +196,6 @@ class PaymentIntentAggregateRoot implements AggregateRoot
     protected function applyPaymentIntentDeclined(PaymentIntentDeclined $event): void
     {
         $this->onDeclined($event->reason);
-    }
-
-    protected function applyGatewayPaymentIntentAuthorized(GatewayPaymentIntentAuthorized $event): void
-    {
-        $this->onAuthorized(
-            $event->paymentIntent->getMoney(),
-            $event->paymentIntent->getMerchantDescriptor(),
-            $event->paymentIntent->getDescription(),
-            $event->paymentIntent->getThreeDS(),
-            $event->paymentIntent->getPaymentMethodId(),
-        );
-    }
-
-    protected function applyGatewayPaymentIntentCaptured(GatewayPaymentIntentCaptured $event): void
-    {
-        $this->onCaptured($event->paymentIntent->getMoney()->getAmount(), $event->paymentIntent->getPaymentMethodId());
-    }
-
-    protected function applyGatewayPaymentIntentCanceled(): void
-    {
-        $this->onCanceled();
     }
 
     private function onAuthorized(Money $money, MerchantDescriptor $merchantDescriptor, string $description, ?ThreeDSResult $threeDS = null, ?AggregateRootId $paymentMethodId = null, ?AggregateRootId $subscriptionId = null): void

@@ -20,10 +20,6 @@ use PaymentSystem\Exceptions\InvalidAmountException;
 use PaymentSystem\Exceptions\PaymentIntentException;
 use PaymentSystem\Exceptions\PaymentMethodException;
 use PaymentSystem\Exceptions\TokenException;
-use PaymentSystem\Gateway\Events\GatewayPaymentIntentAuthorized;
-use PaymentSystem\Gateway\Events\GatewayPaymentIntentCanceled;
-use PaymentSystem\Gateway\Events\GatewayPaymentIntentCaptured;
-use PaymentSystem\Gateway\Resources\PaymentIntentInterface;
 use PaymentSystem\PaymentIntentAggregateRoot;
 use PaymentSystem\PaymentMethodAggregateRoot;
 use PaymentSystem\Tests\PaymentIntents;
@@ -365,64 +361,4 @@ describe('domain-first flow', function () {
         )->when(fn(PaymentIntentAggregateRoot $paymentIntent) => $paymentIntent->decline('test reason'))
             ->expectToFail(PaymentIntentException::unsupportedIntentDeclineStatus(PaymentIntentStatusEnum::SUCCEEDED));
     });
-});
-
-describe('gateway-only flow', function () {
-    it('can authorize', function () {
-        $gateway = $this->createStub(PaymentIntentInterface::class);
-        $gateway->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
-
-        when(function (PaymentIntentAggregateRoot $paymentIntent) use($gateway) {
-            $paymentIntent->getGatewayPaymentIntent()->authorize(fn() => $gateway);
-            return $paymentIntent;
-        })
-            ->then(new GatewayPaymentIntentAuthorized($gateway));
-    });
-    it('can capture', function () {
-        $gateway = $this->createStub(PaymentIntentInterface::class);
-        $gateway->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
-
-        $captured = clone $gateway;
-        $captured->method('getPaymentMethodId')->willReturn($this->createStub(AggregateRootId::class));
-
-        given(
-            new GatewayPaymentIntentAuthorized($gateway),
-        )
-            ->when(function (PaymentIntentAggregateRoot $paymentIntent) use($captured) {
-                $paymentIntent->getGatewayPaymentIntent()->capture(fn() => $captured);
-                return $paymentIntent;
-            })
-            ->then(new GatewayPaymentIntentCaptured($captured));
-    });
-    it('can cancel', function () {
-        $gateway = $this->createStub(PaymentIntentInterface::class);
-        $gateway->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
-
-        $canceled = clone $gateway;
-
-        given(
-            new GatewayPaymentIntentAuthorized($gateway),
-        )
-            ->when(function (PaymentIntentAggregateRoot $paymentIntent) use($canceled) {
-                $paymentIntent->getGatewayPaymentIntent()->cancel(fn() => $canceled);
-                return $paymentIntent;
-            })
-            ->then(new GatewayPaymentIntentCanceled($canceled));
-    });
-});
-
-test('payment intent is serialized and unserialized successfully', function () {
-    $paymentIntent = $this->retrieveAggregateRoot($this->newAggregateRootId());
-    $serialized = serialize($paymentIntent);
-    /** @var PaymentIntentAggregateRoot $paymentIntent */
-    $paymentIntent = unserialize($serialized);
-
-    $gateway = $this->createStub(PaymentIntentInterface::class);
-    $gateway->method('getId')->willReturn($this->createStub(AggregateRootId::class));
-    $gateway->method('getGatewayId')->willReturn($this->createStub(AggregateRootId::class));
-    $gateway->method('isValid')->willReturn(true);
-    $gateway->method('getMoney')->willReturn(new Money(100, new Currency('USD')));
-
-    $paymentIntent->getGatewayPaymentIntent()->authorize(fn() => $gateway);
-    expect($paymentIntent->releaseEvents())->toContainEqual(new GatewayPaymentIntentAuthorized($gateway));
 });
