@@ -30,36 +30,36 @@ class SubscriptionAggregateRoot implements AggregateRoot
 
     public const string GRACE_PERIOD = 'P1D';
 
-    private SubscriptionPlan $plan;
+    private(set) SubscriptionPlan $plan;
 
-    private AggregateRootId $paymentMethodId;
+    private(set) AggregateRootId $paymentMethodId;
 
     /**
      * @var AggregateRootId[]
      */
-    private array $payments = [];
+    private(set) array $payments = [];
 
-    private bool $canceled = false;
+    private(set) bool $canceled = false;
 
     private RecurringActionTracker $tracker;
 
     public static function create(CreateSubscriptionCommandInterface $command): static
     {
-        $command->getPaymentMethod()->isValid() || throw PaymentMethodException::suspended();
+        $command->paymentMethod->isValid() || throw PaymentMethodException::suspended();
 
-        $self = new self($command->getId());
-        $self->recordThat(new SubscriptionCreated($command->getPlan(), $command->getPaymentMethod()->aggregateRootId()));
+        $self = new self($command->id);
+        $self->recordThat(new SubscriptionCreated($command->plan, $command->paymentMethod->aggregateRootId()));
 
         return $self;
     }
 
     public function pay(PaymentIntentAggregateRoot $paymentIntent, ClockInterface $clock): static
     {
-        $paymentIntent->getSubscriptionId() !== null || throw SubscriptionException::paymentIntentNotAttached();
-        $paymentIntent->getSubscriptionId()->toString() === $this->aggregateRootId()->toString() || throw SubscriptionException::paymentIntentNotAttachedToThis();
-        $paymentIntent->getTenderId()->toString() === $this->paymentMethodId->toString() || throw SubscriptionException::paymentMethodMismatch();
+        $paymentIntent->subscriptionId !== null || throw SubscriptionException::paymentIntentNotAttached();
+        $paymentIntent->subscriptionId->toString() === $this->aggregateRootId()->toString() || throw SubscriptionException::paymentIntentNotAttachedToThis();
+        $paymentIntent->tenderId->toString() === $this->paymentMethodId->toString() || throw SubscriptionException::paymentMethodMismatch();
         $paymentIntent->is(PaymentIntentStatusEnum::SUCCEEDED) || throw SubscriptionException::paymentIntentNotSucceeded();
-        $paymentIntent->getMoney()->equals($this->plan->money) || throw SubscriptionException::moneyMismatch();
+        $paymentIntent->money->equals($this->plan->money) || throw SubscriptionException::moneyMismatch();
         in_array($paymentIntent->aggregateRootId()->toString(), array_map(fn(AggregateRootId $id) => $id->toString(), $this->payments), true) && throw SubscriptionException::paymentIntentAlreadyUsed();
 
         $this->recordThat(new SubscriptionPaid($paymentIntent->aggregateRootId(), $clock->now()));
@@ -109,6 +109,24 @@ class SubscriptionAggregateRoot implements AggregateRoot
     public function endsAt(): DateTimeImmutable
     {
         return $this->tracker->getEndDate();
+    }
+
+    protected function apply(object $event): void
+    {
+        switch ($event::class) {
+            case SubscriptionCreated::class:
+                $this->applySubscriptionCreated($event);
+                return;
+            case SubscriptionPaid::class:
+                $this->applySubscriptionPaid($event);
+                return;
+            case SubscriptionPaymentMethodUpdated::class:
+                $this->applySubscriptionPaymentMethodUpdated($event);
+                return;
+            case SubscriptionCanceled::class:
+                $this->applySubscriptionCanceled();
+                return;
+        }
     }
 
     protected function applySubscriptionCreated(SubscriptionCreated $event): void

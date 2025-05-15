@@ -10,13 +10,13 @@ use PaymentSystem\PaymentIntentAggregateRoot;
 
 interface CreateDisputeCommandInterface
 {
-    public function getId(): AggregateRootId;
+    public AggregateRootId $id { get; }
 
-    public function getPaymentIntent(): PaymentIntentAggregateRoot;
+    public PaymentIntentAggregateRoot $paymentIntent { get; }
 
-    public function getMoney(): Money;
+    public Money $money { get; }
 
-    public function getFee(): Money;
+    public Money $fee { get; }
 
-    public function getReason(): string;
+    public string $reason { get; }
 }

@@ -8,7 +8,7 @@ use PaymentSystem\TenderInterface;
 
 interface CapturePaymentCommandInterface
 {
-    public function getAmount(): ?string;
+    public ?string $amount { get; }
 
-    public function getTender(): ?TenderInterface;
+    public ?TenderInterface $tender { get; }
 }

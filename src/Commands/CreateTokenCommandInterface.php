@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace PaymentSystem\Commands;
 
 use EventSauce\EventSourcing\AggregateRootId;
+use PaymentSystem\Contracts\TokenizableSourceInterface;
 use PaymentSystem\Entities\BillingAddress;
-use PaymentSystem\ValueObjects\CreditCard;
 
 interface CreateTokenCommandInterface
 {
-    public function getId(): AggregateRootId;
+    public AggregateRootId $id { get; }
 
-    public function getCard(): CreditCard;
+    public TokenizableSourceInterface $source { get; }
 
-    public function getBillingAddress(): ?BillingAddress;
+    public ?BillingAddress $billingAddress { get; }
 }

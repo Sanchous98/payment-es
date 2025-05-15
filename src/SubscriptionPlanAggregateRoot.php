@@ -15,23 +15,18 @@ class SubscriptionPlanAggregateRoot implements AggregateRoot
 {
     use AggregateRootBehaviour;
 
-    private SubscriptionPlan $plan;
-
-    public function getPlan(): SubscriptionPlan
-    {
-        return $this->plan;
-    }
+    private(set) SubscriptionPlan $plan;
 
     public static function create(CreateSubscriptionPlanCommandInterface $command): static
     {
-        $self = new static($command->getId());
+        $self = new static($command->id);
         $self->recordThat(
             new SubscriptionPlanCreated(
-                $command->getName(),
-                $command->getDescription(),
-                $command->getMoney(),
-                $command->getInterval(),
-                $command->getMerchantDescriptor(),
+                $command->name,
+                $command->description,
+                $command->money,
+                $command->interval,
+                $command->merchantDescriptor,
             )
         );
 
@@ -44,11 +39,11 @@ class SubscriptionPlanAggregateRoot implements AggregateRoot
 
         $this->recordThat(
             new SubscriptionPlanUpdated(
-                $command->getName(),
-                $command->getDescription(),
-                $command->getMoney(),
-                $command->getInterval(),
-                $command->getMerchantDescriptor(),
+                $command->name,
+                $command->description,
+                $command->money,
+                $command->interval,
+                $command->merchantDescriptor,
             )
         );
 

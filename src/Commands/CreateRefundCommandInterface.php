@@ -10,9 +10,9 @@ use PaymentSystem\PaymentIntentAggregateRoot;
 
 interface CreateRefundCommandInterface
 {
-    public function getId(): AggregateRootId;
+    public AggregateRootId $id { get; }
 
-    public function getPaymentIntent(): PaymentIntentAggregateRoot;
+    public PaymentIntentAggregateRoot $paymentIntent { get; }
 
-    public function getMoney(): Money;
+    public Money $money { get; }
 }

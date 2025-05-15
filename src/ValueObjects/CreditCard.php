@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace PaymentSystem\ValueObjects;
 
 use DateTimeImmutable;
-use PaymentSystem\Contracts\TokenizedSourceInterface;
+use PaymentSystem\Contracts\TokenizableSourceInterface;
 use PaymentSystem\ValueObjects\CreditCard\Cvc;
 use PaymentSystem\ValueObjects\CreditCard\Expiration;
 use PaymentSystem\ValueObjects\CreditCard\Holder;
 use PaymentSystem\ValueObjects\CreditCard\Number;
 
-readonly class CreditCard implements TokenizedSourceInterface
+readonly class CreditCard implements TokenizableSourceInterface
 {
     public const TYPE = 'card';
 
