@@ -6,5 +6,5 @@ namespace PaymentSystem\Contracts;
 
 interface EncryptInterface
 {
-    public function encrypt(string $data): string;
+    public function encrypt(#[\SensitiveParameter] string $data): string;
 }

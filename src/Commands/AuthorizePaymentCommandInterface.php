@@ -13,17 +13,17 @@ use PaymentSystem\ValueObjects\ThreeDSResult;
 
 interface AuthorizePaymentCommandInterface
 {
-    public function getId(): AggregateRootId;
+    public AggregateRootId $id { get; }
 
-    public function getMoney(): Money;
+    public Money $money { get; }
 
-    public function getTender(): ?TenderInterface;
+    public ?TenderInterface $tender { get; }
 
-    public function getMerchantDescriptor(): MerchantDescriptor;
+    public MerchantDescriptor $merchantDescriptor { get; }
 
-    public function getDescription(): string;
+    public string $description { get; }
 
-    public function getThreeDSResult(): ?ThreeDSResult;
+    public ?ThreeDSResult $threeDSResult { get; }
 
-    public function getSubscription(): ?SubscriptionAggregateRoot;
+    public ?SubscriptionAggregateRoot $subscription { get; }
 }

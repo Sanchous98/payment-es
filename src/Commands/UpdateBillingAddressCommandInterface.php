@@ -9,23 +9,23 @@ use PaymentSystem\ValueObjects\State;
 
 interface UpdateBillingAddressCommandInterface
 {
-    public function getFirstName(): ?string;
+    public ?string $firstName { get; }
 
-    public function getLastName(): ?string;
+    public ?string $lastName { get; }
 
-    public function getCity(): ?string;
+    public ?string $city { get; }
 
-    public function getCountry(): ?Country;
+    public Country $country { get; }
 
-    public function getPostalCode(): ?string;
+    public ?string $postalCode { get; }
 
-    public function getEmail(): ?Email;
+    public Email $email { get; }
 
-    public function getPhoneNumber(): ?PhoneNumber;
+    public PhoneNumber $phoneNumber { get; }
 
-    public function getAddressLine(): ?string;
+    public ?string $addressLine { get; }
 
-    public function getAddressLineExtra(): ?string;
+    public ?string $addressLineExtra { get; }
 
-    public function getState(): ?State;
+    public ?State $state { get; }
 }

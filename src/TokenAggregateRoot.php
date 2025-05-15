@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace PaymentSystem;
 
 use EventSauce\EventSourcing\AggregateRoot;
-use EventSauce\EventSourcing\AggregateRootId;
-use EventSauce\EventSourcing\AggregateRootWithAggregates;
+use EventSauce\EventSourcing\AggregateRootBehaviour;
 use PaymentSystem\Commands\CreateTokenCommandInterface;
 use PaymentSystem\Contracts\TokenizedSourceInterface;
 use PaymentSystem\Entities\BillingAddress;
@@ -16,79 +15,27 @@ use PaymentSystem\Events\TokenDeclined;
 use PaymentSystem\Events\TokenUsed;
 use PaymentSystem\Exceptions\CardException;
 use PaymentSystem\Exceptions\TokenException;
-use PaymentSystem\Gateway\Events\GatewayTokenAdded;
 
 class TokenAggregateRoot implements AggregateRoot, TenderInterface
 {
-    use AggregateRootWithAggregates {
-        __construct as private __aggregateRootConstruct;
-    }
+    use AggregateRootBehaviour;
 
-    private ?BillingAddress $billingAddress = null;
+    private(set) ?BillingAddress $billingAddress = null;
 
-    private TokenizedSourceInterface $source;
+    private(set) TokenizedSourceInterface $source;
 
-    private TokenStatusEnum $status;
+    private(set) TokenStatusEnum $status;
 
-    private string $declineReason = '';
+    private(set) string $declineReason = '';
 
-    private Gateway\TokensAggregate $gateway;
-
-    private function __construct(AggregateRootId $id)
+    public function is(TokenStatusEnum $status): bool
     {
-        $this->__aggregateRootConstruct($id);
-        $this->gateway = new Gateway\TokensAggregate($this->eventRecorder());
-        $this->registerAggregate($this->gateway);
-    }
-
-    public static function create(CreateTokenCommandInterface $command): static
-    {
-        $command->getCard()->expired() && throw CardException::expired();
-
-        $self = new static($command->getId());
-        $self->recordThat(new TokenCreated($command->getCard(), $command->getBillingAddress()));
-
-        return $self;
-    }
-
-    public function isPending(): bool
-    {
-        return $this->status === TokenStatusEnum::PENDING;
-    }
-
-    public function isUsed(): bool
-    {
-        return $this->status === TokenStatusEnum::USED;
-    }
-
-    public function isDeclined(): bool
-    {
-        return $this->status === TokenStatusEnum::DECLINED;
+        return $this->status === $status;
     }
 
     public function isValid(): bool
     {
-        return $this->status === TokenStatusEnum::VALID;
-    }
-
-    public function getGatewayTokens(): Gateway\TokensAggregate
-    {
-        return $this->gateway;
-    }
-
-    public function getSource(): TokenizedSourceInterface
-    {
-        return $this->source;
-    }
-
-    public function getBillingAddress(): ?BillingAddress
-    {
-        return $this->billingAddress;
-    }
-
-    public function getDeclineReason(): string
-    {
-        return $this->declineReason;
+        return $this->is(TokenStatusEnum::VALID);
     }
 
     public function decline(string $reason): static
@@ -110,34 +57,37 @@ class TokenAggregateRoot implements AggregateRoot, TenderInterface
         return $this;
     }
 
-    public function getGatewayTenders(): array
+    public static function create(CreateTokenCommandInterface $command): static
     {
-        return array_merge(...array_values($this->gateway->getTokens()));
+        $command->card->expired() && throw CardException::expired();
+
+        $self = new static($command->id);
+        $self->recordThat(new TokenCreated($command->card, $command->billingAddress));
+
+        return $self;
     }
 
-    public function __sleep()
+    protected function apply(object $event): void
     {
-        unset($this->eventRecorder);
-        return array_keys((array)$this);
-    }
-
-    public function __wakeup(): void
-    {
-        foreach ($this->aggregatesInsideRoot as $aggregate) {
-            $aggregate->__construct($this->eventRecorder());
+        switch ($event::class) {
+            case TokenCreated::class:
+                $this->applyTokenCreated($event);
+                return;
+            case TokenDeclined::class:
+                $this->applyTokenDeclined($event);
+                return;
+            case TokenUsed::class:
+                $this->applyTokenUsed();
+                return;
         }
     }
 
     // Event Listeners
-
     protected function applyTokenCreated(TokenCreated $event): void
     {
         $this->source = $event->source;
         $this->billingAddress = $event->billingAddress;
         $this->status = TokenStatusEnum::PENDING;
-
-        $this->gateway = new Gateway\TokensAggregate($this->eventRecorder());
-        $this->registerAggregate($this->gateway);
     }
 
     protected function applyTokenDeclined(TokenDeclined $event): void
@@ -149,17 +99,5 @@ class TokenAggregateRoot implements AggregateRoot, TenderInterface
     protected function applyTokenUsed(): void
     {
         $this->status = TokenStatusEnum::USED;
-    }
-
-    protected function applyGatewayTokenAdded(GatewayTokenAdded $event): void
-    {
-        if (!isset($this->source)) {
-            $this->source = $event->token->getSource();
-        }
-
-        if (!isset($this->billingAddress)) {
-            $this->billingAddress = $event->token->getBillingAddress();
-        }
-        $this->status = TokenStatusEnum::VALID;
     }
 }

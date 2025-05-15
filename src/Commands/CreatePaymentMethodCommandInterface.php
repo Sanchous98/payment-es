@@ -11,11 +11,11 @@ use PaymentSystem\ValueObjects\ThreeDSResult;
 
 interface CreatePaymentMethodCommandInterface
 {
-    public function getId(): AggregateRootId;
+    public AggregateRootId $id { get; }
 
-    public function getBillingAddress(): BillingAddress;
+    public BillingAddress $billingAddress { get; }
 
-    public function getSource(): SourceInterface;
+    public SourceInterface $source { get; }
 
-    public function getThreeDS(): ?ThreeDSResult;
+    public ?ThreeDSResult $threeDS { get; }
 }

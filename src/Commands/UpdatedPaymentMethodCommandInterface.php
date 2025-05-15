@@ -8,5 +8,5 @@ use PaymentSystem\Entities\BillingAddress;
 
 interface UpdatedPaymentMethodCommandInterface
 {
-    public function getBillingAddress(): BillingAddress;
+    public BillingAddress $billingAddress { get; }
 }

@@ -17,23 +17,23 @@ class BillingAddressAggregationRoot implements AggregateRoot
 {
     use AggregateRootBehaviour;
 
-    public readonly BillingAddress $address;
+    private(set) BillingAddress $address;
 
     public static function create(CreateBillingAddressCommandInterface $command): static
     {
-        $self = new static($command->getId());
+        $self = new static($command->id);
         $self->recordThat(
             new BillingAddressCreated(
-                $command->getFirstName(),
-                $command->getLastName(),
-                $command->getCity(),
-                $command->getCountry(),
-                $command->getPostalCode(),
-                $command->getEmail(),
-                $command->getPhoneNumber(),
-                $command->getAddressLine(),
-                $command->getAddressLineExtra(),
-                $command->getState(),
+                $command->firstName,
+                $command->lastName,
+                $command->city,
+                $command->country,
+                $command->postalCode,
+                $command->email,
+                $command->phoneNumber,
+                $command->addressLine,
+                $command->addressLineExtra,
+                $command->state,
             )
         );
 
@@ -44,16 +44,16 @@ class BillingAddressAggregationRoot implements AggregateRoot
     {
         $this->recordThat(
             new BillingAddressUpdated(
-                $command->getFirstName(),
-                $command->getLastName(),
-                $command->getCity(),
-                $command->getCountry(),
-                $command->getPostalCode(),
-                $command->getEmail(),
-                $command->getPhoneNumber(),
-                $command->getAddressLine(),
-                $command->getAddressLineExtra(),
-                $command->getState(),
+                $command->firstName,
+                $command->lastName,
+                $command->city,
+                $command->country,
+                $command->postalCode,
+                $command->email,
+                $command->phoneNumber,
+                $command->addressLine,
+                $command->addressLineExtra,
+                $command->state,
             )
         );
 

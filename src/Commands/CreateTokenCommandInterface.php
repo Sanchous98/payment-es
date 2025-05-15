@@ -10,9 +10,9 @@ use PaymentSystem\ValueObjects\CreditCard;
 
 interface CreateTokenCommandInterface
 {
-    public function getId(): AggregateRootId;
+    public AggregateRootId $id { get; }
 
-    public function getCard(): CreditCard;
+    public CreditCard $card { get; }
 
-    public function getBillingAddress(): ?BillingAddress;
+    public ?BillingAddress $billingAddress { get; }
 }

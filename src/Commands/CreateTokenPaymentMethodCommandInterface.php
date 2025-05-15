@@ -9,7 +9,7 @@ use PaymentSystem\TokenAggregateRoot;
 
 interface CreateTokenPaymentMethodCommandInterface
 {
-    public function getId(): AggregateRootId;
+    public AggregateRootId $id { get; }
 
-    public function getToken(): TokenAggregateRoot;
+    public TokenAggregateRoot $token { get; }
 }

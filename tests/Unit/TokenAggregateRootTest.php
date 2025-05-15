@@ -1,16 +1,18 @@
 <?php
 
+use EventSauce\EventSourcing\AggregateRootId;
 use PaymentSystem\Commands\CreateTokenCommandInterface;
+use PaymentSystem\Entities\BillingAddress;
+use PaymentSystem\Enum\TokenStatusEnum;
 use PaymentSystem\Events\TokenCreated;
 use PaymentSystem\Events\TokenDeclined;
 use PaymentSystem\Events\TokenUsed;
 use PaymentSystem\Exceptions\CardException;
 use PaymentSystem\Exceptions\TokenException;
-use PaymentSystem\Gateway\Events\GatewayTokenAdded;
-use PaymentSystem\Gateway\Resources\TokenInterface;
 use PaymentSystem\Tests;
 use PaymentSystem\TokenAggregateRoot;
 use PaymentSystem\ValueObjects\CreditCard;
+
 use PaymentSystem\ValueObjects\GenericId;
 
 use function EventSauce\EventSourcing\PestTooling\given;
@@ -26,18 +28,26 @@ describe('domain-first flow', function () {
             new CreditCard\Holder('Andrea Palladio'),
             new CreditCard\Cvc(),
         );
-        $command = $this->createStub(CreateTokenCommandInterface::class);
-        $command->method('getId')->willReturn($this->newAggregateRootId());
-        $command->method('getBillingAddress')->willReturn(null);
-        $command->method('getCard')->willReturn($card);
+
+        $command = new class implements CreateTokenCommandInterface
+        {
+            public AggregateRootId $id { get => new GenericId(1); }
+            public CreditCard $card { get => new CreditCard(
+                new CreditCard\Number('424242', '4242', 'visa'),
+                CreditCard\Expiration::fromMonthAndYear(12, 34),
+                new CreditCard\Holder('Andrea Palladio'),
+                new CreditCard\Cvc(),
+            );}
+            public ?BillingAddress $billingAddress { get => null; }
+        };
 
         when(fn() => TokenAggregateRoot::create($command))
             ->then(new TokenCreated($card));
 
         expect($this->retrieveAggregateRoot($this->aggregateRootId()))
             ->toBeInstanceOf(TokenAggregateRoot::class)
-            ->isPending()->toBeTrue()
-            ->getSource()->toBe($card);
+            ->is(TokenStatusEnum::PENDING)->toBeTrue()
+            ->source->toEqual($card);
     });
 
     it('does not accept expired cards', function () {
@@ -70,7 +80,7 @@ describe('domain-first flow', function () {
 
         expect($this->retrieveAggregateRoot($this->newAggregateRootId()))
             ->toBeInstanceOf(TokenAggregateRoot::class)
-            ->isUsed()->toBeTrue()
+            ->is(TokenStatusEnum::USED)->toBeTrue()
             ->getGatewayTenders()->toContain($gateway);
     });
 
@@ -111,8 +121,8 @@ describe('domain-first flow', function () {
             ->then(new TokenDeclined('test reason'));
 
         expect($this->retrieveAggregateRoot($this->newAggregateRootId()))
-            ->isDeclined()->toBeTrue()
-            ->getDeclineReason()->toBe('test reason');
+            ->is(TokenStatusEnum::REVOKED)->toBeTrue()
+            ->declineReason->toBe('test reason');
     });
 
     it('cannot decline expired token', function () {
@@ -125,54 +135,4 @@ describe('domain-first flow', function () {
             ->when(fn() => $this->retrieveAggregateRoot($this->newAggregateRootId())->decline('test reason'))
             ->expectToFail(TokenException::suspended());
     });
-});
-
-describe('gateway-only flow', function () {
-    it('creates token', function () {
-        $gateway = $this->createStub(TokenInterface::class);
-        $gateway->method('getId')->willReturn(new GenericId('testId'));
-        $gateway->method('getSource')->willReturn(new CreditCard(
-            new CreditCard\Number('424242', '4242', 'amex'),
-            CreditCard\Expiration::fromMonthAndYear(12, 34),
-            new CreditCard\Holder('ANDREA PALLADIO'),
-            new CreditCard\Cvc(),
-        ));
-
-        when(function(TokenAggregateRoot $token) use ($gateway) {
-            $token->getGatewayTokens()->add(fn() => $gateway);
-            return $token;
-        })->then(new GatewayTokenAdded($gateway));
-
-        expect($this->repository->retrieve($this->aggregateRootId()))
-            ->toBeInstanceOf(TokenAggregateRoot::class)
-            ->aggregateRootId()->toBe($this->aggregateRootId())
-            ->isUsed()->toBeFalse()
-            ->isValid()->toBeTrue()
-            ->getSource()->toEqual(new CreditCard(
-                new CreditCard\Number('424242', '4242', 'amex'),
-                CreditCard\Expiration::fromMonthAndYear(12, 34),
-                new CreditCard\Holder('ANDREA PALLADIO'),
-                new CreditCard\Cvc(),
-            ));
-    });
-});
-
-test('token is serialized and unserialized successfully', function () {
-    $token = $this->retrieveAggregateRoot($this->newAggregateRootId());
-    $serialized = serialize($token);
-    /** @var TokenAggregateRoot $token */
-    $token = unserialize($serialized);
-
-    $gateway = $this->createStub(TokenInterface::class);
-    $gateway->method('getId')->willReturn(new GenericId('testId'));
-    $gateway->method('getSource')->willReturn(new CreditCard(
-        new CreditCard\Number('424242', '4242', 'amex'),
-        CreditCard\Expiration::fromMonthAndYear(12, 34),
-        new CreditCard\Holder('ANDREA PALLADIO'),
-        new CreditCard\Cvc(),
-    ));
-
-
-    $token->getGatewayTokens()->add(fn() => $gateway);
-    expect($token->releaseEvents())->toContainEqual(new GatewayTokenAdded($gateway));
 });

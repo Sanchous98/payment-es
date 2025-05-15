@@ -8,9 +8,9 @@ use PaymentSystem\PaymentMethodAggregateRoot;
 
 interface CreateSubscriptionCommandInterface
 {
-    public function getId(): AggregateRootId;
+    public AggregateRootId $id { get; }
 
-    public function getPlan(): SubscriptionPlan;
+    public SubscriptionPlan $plan { get; }
 
-    public function getPaymentMethod(): PaymentMethodAggregateRoot;
+    public PaymentMethodAggregateRoot $paymentMethod { get; }
 }

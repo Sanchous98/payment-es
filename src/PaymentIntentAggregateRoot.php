@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace PaymentSystem;
 
 use EventSauce\EventSourcing\AggregateRoot;
+use EventSauce\EventSourcing\AggregateRootBehaviour;
 use EventSauce\EventSourcing\AggregateRootId;
-use EventSauce\EventSourcing\AggregateRootWithAggregates;
 use Money\Money;
 use PaymentSystem\Commands\AuthorizePaymentCommandInterface;
 use PaymentSystem\Commands\CapturePaymentCommandInterface;
@@ -17,92 +17,39 @@ use PaymentSystem\Events\PaymentIntentCaptured;
 use PaymentSystem\Events\PaymentIntentDeclined;
 use PaymentSystem\Exceptions\InvalidAmountException;
 use PaymentSystem\Exceptions\PaymentIntentException;
-use PaymentSystem\Gateway\Events\GatewayPaymentIntentAuthorized;
-use PaymentSystem\Gateway\Events\GatewayPaymentIntentCaptured;
 use PaymentSystem\ValueObjects\MerchantDescriptor;
 use PaymentSystem\ValueObjects\ThreeDSResult;
 
 class PaymentIntentAggregateRoot implements AggregateRoot
 {
-    use AggregateRootWithAggregates {
-        __construct as __aggregateRootConstruct;
-    }
+    use AggregateRootBehaviour;
 
-    private const CAPTURABLE_STATUSES = [
+    private const array CAPTURABLE_STATUSES = [
         PaymentIntentStatusEnum::REQUIRES_CAPTURE,
         PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD,
     ];
 
-    private AggregateRootId $tenderId;
+    private(set) AggregateRootId $tenderId;
 
-    private PaymentIntentStatusEnum $status;
+    private(set) PaymentIntentStatusEnum $status;
 
-    private Money $money;
+    private(set) Money $money;
 
-    private MerchantDescriptor $merchantDescriptor;
+    private(set) MerchantDescriptor $merchantDescriptor;
 
-    private string $description;
+    private(set) string $description;
 
-    private string $declineReason = '';
+    private(set) string $declineReason = '';
 
-    private ?ThreeDSResult $threeDSResult;
+    private(set) ?ThreeDSResult $threeDSResult;
 
     private Money $authCaptureDiff;
 
-    private Gateway\PaymentIntentAggregate $gateway;
-
-    private ?AggregateRootId $subscriptionId = null;
-
-    private function __construct(AggregateRootId $aggregateRootId)
-    {
-        $this->__aggregateRootConstruct($aggregateRootId);
-        $this->gateway = new Gateway\PaymentIntentAggregate($this->eventRecorder());
-        $this->registerAggregate($this->gateway);
-    }
-
-    public function getTenderId(): ?AggregateRootId
-    {
-        return $this->tenderId;
-    }
-
-    public function getMoney(): Money
-    {
-        return $this->money;
-    }
-
-    public function getMerchantDescriptor(): MerchantDescriptor
-    {
-        return $this->merchantDescriptor;
-    }
-
-    public function getDescription(): string
-    {
-        return $this->description;
-    }
-
-    public function getThreeDSResult(): ?ThreeDSResult
-    {
-        return $this->threeDSResult;
-    }
+    private(set) ?AggregateRootId $subscriptionId = null;
 
     public function is(PaymentIntentStatusEnum $status): bool
     {
         return $this->status === $status;
-    }
-
-    public function getStatus(): PaymentIntentStatusEnum
-    {
-        return $this->status;
-    }
-
-    public function getDeclineReason(): string
-    {
-        return $this->declineReason;
-    }
-
-    public function getSubscriptionId(): ?AggregateRootId
-    {
-        return $this->subscriptionId;
     }
 
     public function getAuthAndCaptureDifference(): Money
@@ -110,28 +57,20 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         return $this->authCaptureDiff;
     }
 
-    public function getGatewayPaymentIntent(): Gateway\PaymentIntentAggregate
-    {
-        return $this->gateway;
-    }
-
     public static function authorize(AuthorizePaymentCommandInterface $command): static
     {
-        $command->getMoney()->isZero() && throw InvalidAmountException::notZero();
-        $command->getMoney()->isNegative() && throw InvalidAmountException::notNegative();
+        $command->money->isZero() && throw InvalidAmountException::notZero();
+        $command->money->isNegative() && throw InvalidAmountException::notNegative();
+        $command->tender?->use();
 
-        if ($command->getTender() !== null) {
-            $command->getTender()->use();
-        }
-
-        $self = new static($command->getId());
+        $self = new static($command->id);
         $self->recordThat(new PaymentIntentAuthorized(
-            $command->getMoney(),
-            $command->getTender()?->aggregateRootId(),
-            $command->getMerchantDescriptor(),
-            $command->getDescription(),
-            $command->getThreeDSResult(),
-            $command->getSubscription()?->aggregateRootId(),
+            $command->money,
+            $command->tender?->aggregateRootId(),
+            $command->merchantDescriptor,
+            $command->description,
+            $command->threeDSResult,
+            $command->subscription?->aggregateRootId(),
         ));
 
         return $self;
@@ -143,7 +82,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
             throw PaymentIntentException::unsupportedIntentCaptureStatus($this->status);
         }
 
-        $money = new Money($command->getAmount() ?? $this->money->getAmount(), $this->money->getCurrency());
+        $money = new Money($command->amount ?? $this->money->getAmount(), $this->money->getCurrency());
 
         $money->isZero() && throw InvalidAmountException::notZero();
         $money->isNegative() && throw InvalidAmountException::notNegative();
@@ -153,13 +92,13 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         }
 
         if ($this->status === PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD) {
-            $command->getTender() !== null || throw PaymentIntentException::paymentMethodIsRequired();
-            $command->getTender()->use();
+            $command->tender !== null || throw PaymentIntentException::paymentMethodIsRequired();
+            $command->tender->use();
         }
 
         $this->recordThat(new PaymentIntentCaptured(
-            $command->getAmount(),
-            isset($this->paymentMethodId) ? null : $command->getTender()?->aggregateRootId(),
+            $command->amount,
+            isset($this->paymentMethodId) ? null : $command->tender?->aggregateRootId(),
         ));
 
         return $this;
@@ -187,19 +126,6 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         return $this;
     }
 
-    public function __sleep()
-    {
-        unset($this->eventRecorder);
-        return array_keys((array)$this);
-    }
-
-    public function __wakeup(): void
-    {
-        foreach ($this->aggregatesInsideRoot as $aggregate) {
-            $aggregate->__construct($this->eventRecorder());
-        }
-    }
-
     // Event Listeners
 
     protected function applyPaymentIntentAuthorized(PaymentIntentAuthorized $event): void
@@ -212,8 +138,6 @@ class PaymentIntentAggregateRoot implements AggregateRoot
             $event->tenderId,
             $event->subscriptionId,
         );
-        $this->gateway = new Gateway\PaymentIntentAggregate($this->eventRecorder());
-        $this->registerAggregate($this->gateway);
     }
 
     protected function applyPaymentIntentCaptured(PaymentIntentCaptured $event): void
@@ -231,27 +155,6 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         $this->onDeclined($event->reason);
     }
 
-    protected function applyGatewayPaymentIntentAuthorized(GatewayPaymentIntentAuthorized $event): void
-    {
-        $this->onAuthorized(
-            $event->paymentIntent->getMoney(),
-            $event->paymentIntent->getMerchantDescriptor(),
-            $event->paymentIntent->getDescription(),
-            $event->paymentIntent->getThreeDS(),
-            $event->paymentIntent->getPaymentMethodId(),
-        );
-    }
-
-    protected function applyGatewayPaymentIntentCaptured(GatewayPaymentIntentCaptured $event): void
-    {
-        $this->onCaptured($event->paymentIntent->getMoney()->getAmount(), $event->paymentIntent->getPaymentMethodId());
-    }
-
-    protected function applyGatewayPaymentIntentCanceled(): void
-    {
-        $this->onCanceled();
-    }
-
     private function onAuthorized(Money $money, MerchantDescriptor $merchantDescriptor, string $description, ?ThreeDSResult $threeDS = null, ?AggregateRootId $paymentMethodId = null, ?AggregateRootId $subscriptionId = null): void
     {
         $this->money = $money;
@@ -265,7 +168,7 @@ class PaymentIntentAggregateRoot implements AggregateRoot
         $this->status = isset($this->tenderId) ? PaymentIntentStatusEnum::REQUIRES_CAPTURE : PaymentIntentStatusEnum::REQUIRES_PAYMENT_METHOD;
     }
 
-    private function onCaptured(string $amount = null, AggregateRootId $tenderId = null): void
+    private function onCaptured(?string $amount = null, ?AggregateRootId $tenderId = null): void
     {
         $newMoney = isset($amount) ? new Money($amount, $this->money->getCurrency()) : $this->money;
         $this->authCaptureDiff = $this->money->subtract($newMoney);

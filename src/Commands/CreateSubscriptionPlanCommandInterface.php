@@ -9,15 +9,15 @@ use PaymentSystem\ValueObjects\MerchantDescriptor;
 
 interface CreateSubscriptionPlanCommandInterface
 {
-    public function getId(): AggregateRootId;
+    public AggregateRootId $id { get; }
 
-    public function getName(): string;
+    public string $name { get; }
 
-    public function getDescription(): string;
+    public string $description { get; }
 
-    public function getMoney(): Money;
+    public Money $money { get; }
 
-    public function getInterval(): DateInterval;
+    public DateInterval $interval { get; }
 
-    public function getMerchantDescriptor(): MerchantDescriptor;
+    public MerchantDescriptor $merchantDescriptor { get; }
 }

@@ -21,32 +21,32 @@ class DisputeAggregateRoot implements AggregateRoot
 {
     use AggregateRootBehaviour;
 
-    private AggregateRootId $paymentIntentId;
+    private(set) AggregateRootId $paymentIntentId;
 
-    private DisputeStatusEnum $status;
+    private(set) DisputeStatusEnum $status;
 
-    private Money $money;
+    private(set) Money $money;
 
-    private Money $fee;
+    private(set) Money $fee;
 
-    private string $reason;
+    private(set) string $reason;
 
     public static function create(CreateDisputeCommandInterface $command): static
     {
-        if (!$command->getPaymentIntent()->is(PaymentIntentStatusEnum::SUCCEEDED)) {
+        if (!$command->paymentIntent->is(PaymentIntentStatusEnum::SUCCEEDED)) {
             throw DisputeException::cannotDisputeOnNotSucceededPayment();
         }
 
-        if ($command->getPaymentIntent()->getMoney()->lessThan($command->getMoney())) {
-            throw InvalidAmountException::notGreaterThanCaptured($command->getMoney()->getAmount());
+        if ($command->paymentIntent->money->lessThan($command->money)) {
+            throw InvalidAmountException::notGreaterThanCaptured($command->money->getAmount());
         }
 
-        $self = new static($command->getId());
+        $self = new static($command->id);
         $self->recordThat(new DisputeCreated(
-            $command->getPaymentIntent()->aggregateRootId(),
-            $command->getMoney(),
-            $command->getFee(),
-            $command->getReason(),
+            $command->paymentIntent->aggregateRootId(),
+            $command->money,
+            $command->fee,
+            $command->reason,
         ));
 
         return $self;
@@ -55,26 +55,6 @@ class DisputeAggregateRoot implements AggregateRoot
     public function is(DisputeStatusEnum $status): bool
     {
         return $this->status === $status;
-    }
-
-    public function getMoney(): Money
-    {
-        return $this->money;
-    }
-
-    public function getFee(): Money
-    {
-        return $this->fee;
-    }
-
-    public function getReason(): string
-    {
-        return $this->reason;
-    }
-
-    public function getPaymentIntentId(): AggregateRootId
-    {
-        return $this->paymentIntentId;
     }
 
     public function win(): static
@@ -95,6 +75,21 @@ class DisputeAggregateRoot implements AggregateRoot
         return $this;
     }
 
+    protected function apply(object $event): void
+    {
+        switch ($event::class) {
+            case DisputeCreated::class:
+                $this->applyDisputeCreated($event);
+                return;
+            case DisputeLost::class:
+                $this->applyDisputeLost();
+                return;
+            case DisputeWon::class:
+                $this->applyDisputeWon();
+                return;
+        }
+    }
+
     protected function applyDisputeCreated(DisputeCreated $event): void
     {
         $this->status = DisputeStatusEnum::CREATED;
@@ -112,11 +107,5 @@ class DisputeAggregateRoot implements AggregateRoot
     protected function applyDisputeWon(): void
     {
         $this->status = DisputeStatusEnum::WON;
-    }
-
-    public function __sleep()
-    {
-        unset($this->eventRecorder);
-        return array_keys((array)$this);
     }
 }

@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace PaymentSystem;
 
 use EventSauce\EventSourcing\AggregateRoot;
-use EventSauce\EventSourcing\AggregateRootId;
-use EventSauce\EventSourcing\AggregateRootWithAggregates;
+use EventSauce\EventSourcing\AggregateRootBehaviour;
 use PaymentSystem\Commands\CreatePaymentMethodCommandInterface;
 use PaymentSystem\Commands\CreateTokenPaymentMethodCommandInterface;
 use PaymentSystem\Commands\UpdatedPaymentMethodCommandInterface;
@@ -19,45 +18,20 @@ use PaymentSystem\Events\PaymentMethodSuspended;
 use PaymentSystem\Events\PaymentMethodUpdated;
 use PaymentSystem\Exceptions\PaymentMethodException;
 use PaymentSystem\Exceptions\TokenException;
-use PaymentSystem\Gateway\Events\GatewayPaymentMethodAdded;
-use PaymentSystem\Gateway\Events\GatewayPaymentMethodSuspended;
-use PaymentSystem\Gateway\Events\GatewayPaymentMethodUpdated;
-use PaymentSystem\Gateway\Resources\PaymentMethodInterface;
 use PaymentSystem\ValueObjects\ThreeDSResult;
 use RuntimeException;
 
 class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
 {
-    use AggregateRootWithAggregates {
-        __construct as __aggregateRootConstruct;
-    }
+    use AggregateRootBehaviour;
 
-    private BillingAddress $billingAddress;
+    private(set) BillingAddress $billingAddress;
 
-    private SourceInterface $source;
+    private(set) SourceInterface $source;
 
-    private PaymentMethodStatusEnum $status;
+    private(set) PaymentMethodStatusEnum $status;
 
-    private Gateway\PaymentMethodsAggregate $gateway;
-
-    private ?ThreeDSResult $threeDSResult;
-
-    private function __construct(AggregateRootId $aggregateRootId)
-    {
-        $this->__aggregateRootConstruct($aggregateRootId);
-        $this->gateway = new Gateway\PaymentMethodsAggregate($this->eventRecorder());
-        $this->registerAggregate($this->gateway);
-    }
-
-    public function getBillingAddress(): BillingAddress
-    {
-        return $this->billingAddress;
-    }
-
-    public function getSource(): SourceInterface
-    {
-        return $this->source;
-    }
+    private(set) ?ThreeDSResult $threeDSResult;
 
     public function isValid(): bool
     {
@@ -69,34 +43,24 @@ class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
         return $this->status === $status;
     }
 
-    public function getGatewayPaymentMethods(): Gateway\PaymentMethodsAggregate
-    {
-        return $this->gateway;
-    }
-
-    public function getGatewayTenders(): array
-    {
-        return array_merge(...array_values($this->gateway->getPaymentMethods()));
-    }
-
     public static function create(CreatePaymentMethodCommandInterface $command): static
     {
-        $self = new static($command->getId());
-        $self->recordThat(new PaymentMethodCreated($command->getBillingAddress(), $command->getSource(), $command->getThreeDS()));
+        $self = new static($command->id);
+        $self->recordThat(new PaymentMethodCreated($command->billingAddress, $command->source, $command->threeDS));
 
         return $self;
     }
 
     public static function createFromToken(CreateTokenPaymentMethodCommandInterface $command): static
     {
-        !$command->getToken()->isValid() && throw TokenException::suspended();
+        !$command->token->isValid() && throw TokenException::suspended();
 
-        $self = new static($command->getId());
+        $self = new static($command->id);
         $self->recordThat(
             new PaymentMethodCreated(
-                $command->getToken()->getBillingAddress(),
-                $command->getToken()->getSource(),
-                tokenId: $command->getToken()->aggregateRootId()
+                $command->token->billingAddress,
+                $command->token->source,
+                tokenId: $command->token->aggregateRootId()
             )
         );
 
@@ -109,7 +73,7 @@ class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
             throw PaymentMethodException::suspended();
         }
 
-        $this->recordThat(new PaymentMethodUpdated($command->getBillingAddress()));
+        $this->recordThat(new PaymentMethodUpdated($command->billingAddress));
 
         return $this;
     }
@@ -145,21 +109,25 @@ class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
         return $this;
     }
 
-    public function __sleep()
+    protected function apply(object $event): void
     {
-        unset($this->eventRecorder);
-        return array_keys((array)$this);
-    }
-
-    public function __wakeup(): void
-    {
-        foreach ($this->aggregatesInsideRoot as $aggregate) {
-            $aggregate->__construct($this->eventRecorder());
+        switch ($event::class) {
+            case PaymentMethodCreated::class:
+                $this->applyPaymentMethodCreated($event);
+                return;
+            case PaymentMethodUpdated::class:
+                $this->applyPaymentMethodUpdated($event);
+                return;
+            case PaymentMethodSuspended::class:
+                $this->applyPaymentMethodSuspended();
+                return;
+            case PaymentMethodFailed::class:
+                $this->applyPaymentMethodFailed();
+                return;
         }
     }
 
     // Event Listener
-
     protected function applyPaymentMethodCreated(PaymentMethodCreated $event): void
     {
         $this->billingAddress = $event->billingAddress;
@@ -180,30 +148,5 @@ class PaymentMethodAggregateRoot implements AggregateRoot, TenderInterface
     protected function applyPaymentMethodFailed(): void
     {
         $this->status = PaymentMethodStatusEnum::FAILED;
-    }
-
-    protected function applyGatewayPaymentMethodAdded(GatewayPaymentMethodAdded $event): void
-    {
-        $this->billingAddress = $event->paymentMethod->getBillingAddress();
-        $this->source = $event->paymentMethod->getSource();
-        $this->status = PaymentMethodStatusEnum::SUCCEEDED;
-    }
-
-    protected function applyGatewayPaymentMethodUpdated(GatewayPaymentMethodUpdated $event): void
-    {
-        $this->billingAddress = $event->paymentMethod->getBillingAddress();
-    }
-
-    protected function applyGatewayPaymentMethodSuspended(GatewayPaymentMethodSuspended $event): void
-    {
-        $paymentMethods = array_map(function (PaymentMethodInterface $paymentMethod) use ($event) {
-            return $event->paymentMethod->getId()->toString() === $paymentMethod->getId()->toString() ? $event->paymentMethod : $paymentMethod;
-        }, $this->getGatewayTenders());
-
-        $validMethods = array_filter($paymentMethods, fn(PaymentMethodInterface $paymentMethod) => $paymentMethod->isValid());
-
-        if (count($validMethods) === 0) {
-            $this->status = PaymentMethodStatusEnum::SUSPENDED;
-        }
     }
 }
